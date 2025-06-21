@@ -234,6 +234,8 @@ p = (; orographic_gravity_wave = CA.orographic_gravity_wave_cache(Y, ogw, topo_i
 
 (; topo_k_pbl, topo_ᶜz_pbl, topo_ᶠz_pbl, topo_τ_x, topo_τ_y, topo_τ_l, topo_τ_p, topo_τ_np) =
     p.orographic_gravity_wave
+(; topo_ᶠz_ref, topo_ᶠp_ref, topo_ᶜmask, topo_ᶜweights, topo_ᶜdiff, topo_ᶜwtsum) =
+    p.orographic_gravity_wave
 (; topo_ᶜτ_sat, topo_ᶠτ_sat) = p.orographic_gravity_wave
 (; topo_U_sat, topo_FrU_sat, topo_FrU_max, topo_FrU_min, topo_FrU_clp) =
     p.orographic_gravity_wave
@@ -399,18 +401,21 @@ CA.calc_nonpropagating_forcing!(
     ᶠN,
     topo_ᶠVτ,
     ᶠp,
-    ᶜp,
     ᶠp_m1,
     topo_τ_x,
     topo_τ_y,
     topo_τ_l,
     topo_τ_np,
     ᶠz,
-    ᶜz,
     topo_ᶠz_pbl,
     ᶠdz,
     grav,
-    ᶜweights
+    topo_ᶠz_ref,
+    topo_ᶠp_ref,
+    topo_ᶜmask,
+    topo_ᶜweights,
+    topo_ᶜdiff,
+    topo_ᶜwtsum,
 )
 
 # constrain forcing

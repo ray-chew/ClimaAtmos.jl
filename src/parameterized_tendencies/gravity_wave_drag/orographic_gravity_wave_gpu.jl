@@ -103,15 +103,23 @@ function orographic_gravity_wave_cache(Y, ogw::OrographicGravityWave, topo_info)
         topo_U_k_field = Fields.Field(FT, axes(Y.c)),
         topo_level_idx = topo_level_idx,
 
-        topo_base_Vτ = similar(Fields.level(Y.c.ρ, 1)),
-        topo_k_pbl = similar(Fields.level(Y.c.ρ, 1)),
+        topo_base_Vτ = similar(Fields.level(Y.c.ρ, 1), FT),
+        topo_k_pbl = similar(Fields.level(Y.c.ρ, 1), FT),
         topo_ᶜz_pbl = similar(Fields.level(Y.c.ρ, 1)),
         topo_ᶠz_pbl = similar(Fields.level(Y.f.u₃, half)),
+
+        topo_ᶠz_ref = similar(Fields.level(Y.f.u₃, half), FT),
+        topo_ᶠp_ref = similar(Fields.level(Y.f.u₃, half), FT),
+        topo_ᶜmask = similar(Y.c.ρ, FT),
+        topo_ᶜweights = similar(Y.c.ρ, FT),
+        topo_ᶜdiff = similar(Y.c.ρ, FT),
+        topo_ᶜwtsum = similar(Fields.level(Y.c.ρ, 1), FT),
+
         topo_k_pbl_values = similar(Fields.level(Y.c.ρ, 1), Tuple{FT, FT, FT, FT}),
         topo_info = topo_info,
         ᶜN = similar(Fields.level(Y.c.ρ, 1)),
-        uforcing = similar(Y.c.ρ),
-        vforcing = similar(Y.c.ρ),
+        uforcing = similar(Y.c.ρ, FT),
+        vforcing = similar(Y.c.ρ, FT),
         ᶜweights = similar(Y.c.ρ),
         ᶜdTdz = similar(Y.c.ρ),
         ᶜdτ_sat_dz = similar(Y.c.ρ)
@@ -270,23 +278,23 @@ function calc_nonpropagating_forcing!(
     ᶠN,
     ᶠVτ,
     ᶠp,
-    ᶜp,
     ᶠp_m1,
     τ_x,
     τ_y,
     τ_l,
     τ_np,
     ᶠz,
-    ᶜz,
     z_pbl,
     ᶠdz,
     grav,
-    ᶜweights
+    ᶠz_ref,
+    ᶠp_ref,
+    ᶜmask,
+    ᶜweights,
+    ᶜdiff,
+    ᶜwtsum
 )
     FT = eltype(grav)
-
-    # Initialize fields for z_ref and phase computation
-    z_ref = similar(Fields.level(ᶠz, half), FT)
 
     # Convert type parameters to values before using in closure
     zero_val = FT(0)
@@ -299,7 +307,7 @@ function calc_nonpropagating_forcing!(
     input = @. lazy(tuple(z_pbl, ᶠz, ᶠN, ᶠVτ, zero_val, pi_val, min_n_val, max_n_val, min_Vτ_val))
 
     Operators.column_reduce!(
-        z_ref,
+        ᶠz_ref,
         input;
         init = (FT(0.0), FT(0.0), FT(0.0), false),
         transform = first
@@ -323,13 +331,11 @@ function calc_nonpropagating_forcing!(
         return (z_ref_acc, ᶠz_pbl_acc, phase_acc, false)
     end
 
-    ᶠp_ref = similar(Fields.level(ᶠz, half), FT)
-
     eps_val = eps(FT)
     half_val = FT(0.5)
     nan_val = FT(NaN)
     
-    input = @. lazy(tuple(z_ref, ᶠp, ᶠz, ᶠdz, eps_val, half_val))
+    input = @. lazy(tuple(ᶠz_ref, ᶠp, ᶠz, ᶠdz, eps_val, half_val))
 
     Operators.column_reduce!(
         ᶠp_ref,
@@ -344,37 +350,30 @@ function calc_nonpropagating_forcing!(
         return ᶠp_ref
     end
     
-    mask = Fields.Field(Bool, axes(ᶠz))
-    @. mask = (ᶠz .> z_pbl) .&& (ᶠz .<= z_ref)
     L2 = Operators.LeftBiasedF2C(;)
-    mask = L2.(mask)
+    @. ᶜmask = L2.((ᶠz .> z_pbl) .&& (ᶠz .<= ᶠz_ref))
+    @. ᶜweights = ᶜinterp.(ᶠp .- ᶠp_ref)
+    @. ᶜdiff = ᶜinterp.(ᶠp_m1 .- ᶠp)
 
-    ᶠweights = ᶠp .- ᶠp_ref
-    weights = ᶜinterp.(ᶠweights)
-    f_diff = ᶠp_m1 .- ᶠp
-    f_diff = ᶜinterp.(f_diff)
+    parent(ᶜweights) .= parent(ᶜweights .* ᶜmask)
 
-    wtsum_field = @. ifelse(mask != 0, f_diff / weights, 0.0)
-
-    parent(ᶜweights) .= parent(weights .* mask)
-
-    wtsum = similar(Fields.level(ᶜuforcing, 1), FT)
+    input = @. lazy(ifelse(ᶜmask != 0, ᶜdiff / ᶜweights, 0.0))
 
     Operators.column_reduce!(
-        wtsum, 
-        wtsum_field;
+        ᶜwtsum, 
+        input;
         init = FT(0)
     ) do acc, wtsum_field
         return acc + wtsum_field
     end
 
-    if any(isnan, parent(wtsum)) || any(x -> x == 0, parent(wtsum))
+    if any(isnan, parent(ᶜwtsum)) || any(x -> x == 0, parent(ᶜwtsum))
     @warn "wtsum contains invalid values!"
     end
 
     # compute drag
-    @. ᶜuforcing += grav * τ_x * τ_np / τ_l / wtsum * ᶜweights
-    @. ᶜvforcing += grav * τ_y * τ_np / τ_l / wtsum * ᶜweights
+    @. ᶜuforcing += grav * τ_x * τ_np / τ_l / ᶜwtsum * ᶜweights
+    @. ᶜvforcing += grav * τ_y * τ_np / τ_l / ᶜwtsum * ᶜweights
 
 end
 
