@@ -70,7 +70,13 @@ topo_info = CA.get_topo_info(Y, ogw)
 Y = ClimaCore.to_device(ClimaComms.CUDADevice(), copy(Y))
 topo_info_gpu = CA.move_topo_info_to_gpu(Y, topo_info)
 
-p = (; orographic_gravity_wave = CA.orographic_gravity_wave_cache(Y, ogw, topo_info_gpu))
+p = (;
+    orographic_gravity_wave = CA.orographic_gravity_wave_cache(
+        Y,
+        ogw,
+        topo_info_gpu,
+    )
+)
 
 
 # Unpack cache vars
@@ -125,7 +131,7 @@ CA.calc_base_flux!(
     v_phy,
     Y.c.N,
     FT(16000),
-    topo_k_pbl_values
+    topo_k_pbl_values,
 )
 # @Main.infiltrate
 
@@ -135,7 +141,7 @@ CA.calc_base_flux!(
 topo_τ_x = ClimaCore.to_cpu(topo_τ_x)
 topo_τ_y = ClimaCore.to_cpu(topo_τ_y)
 # ᶜz_cpu = ClimaCore.to_cpu(ᶜz)
-Y_cpu  = ClimaCore.to_cpu(Y)
+Y_cpu = ClimaCore.to_cpu(Y)
 
 # Remap base flux to regular lat/lon grid for visualization
 TOPO_DIR = joinpath(@__DIR__, "remap_data/")

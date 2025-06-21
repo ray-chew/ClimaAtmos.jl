@@ -37,9 +37,7 @@ function get_topo_info(Y, ogw::OrographicGravityWave)
         elevation_rll =
             AA.earth_orography_file_path(; context = ClimaComms.context(Y.c))
         radius =
-            Spaces.topology(
-                Spaces.horizontal_space(axes(Y.c)),
-            ).mesh.domain.radius
+            Spaces.topology(Spaces.horizontal_space(axes(Y.c))).mesh.domain.radius
         topo_info = compute_OGW_info(Y, elevation_rll, radius, γ, h_frac)
     elseif ogw.topo_info == "linear"
         # For user-defined analytical tests
@@ -71,7 +69,7 @@ function orographic_gravity_wave_cache(Y, ogw::OrographicGravityWave, topo_info)
         topo_γ = γ,
         topo_β = β,
         topo_ϵ = ϵ,
-        )
+    )
 
     return (;
         topo_ᶜτ_sat = Fields.Field(FT, axes(Y.c)),
@@ -99,7 +97,10 @@ function orographic_gravity_wave_cache(Y, ogw::OrographicGravityWave, topo_info)
         topo_ᶜdiff = similar(Y.c.ρ, FT),
         topo_ᶜwtsum = similar(Fields.level(Y.c.ρ, 1), FT),
 
-        topo_ᶜvalues_at_z_pbl = similar(Fields.level(Y.c.ρ, 1), Tuple{FT, FT, FT, FT}),
+        topo_ᶜvalues_at_z_pbl = similar(
+            Fields.level(Y.c.ρ, 1),
+            Tuple{FT, FT, FT, FT},
+        ),
         topo_ᶜinfo = topo_info,
         ogw_params = ogw_params,
         topo_ᶜuforcing = similar(Y.c.ρ, FT),
@@ -111,7 +112,13 @@ function orographic_gravity_wave_cache(Y, ogw::OrographicGravityWave, topo_info)
 
 end
 
-function orographic_gravity_wave_tendency!(Yₜ, Y, p, t, ::FullOrographicGravityWave)
+function orographic_gravity_wave_tendency!(
+    Yₜ,
+    Y,
+    p,
+    t,
+    ::FullOrographicGravityWave,
+)
     ᶜT = p.scratch.ᶜtemp_scalar
     (; params) = p
     (; ᶜts, ᶜp) = p.precomputed
@@ -290,24 +297,36 @@ function calc_nonpropagating_forcing!(
     min_Vτ_val = FT(1.0)
 
     # Compute z_ref using column_reduce
-    input = @. lazy(tuple(ᶠz_pbl, ᶠz, ᶠN, ᶠVτ, pi_val, min_n_val, max_n_val, min_Vτ_val))
+    input = @. lazy(
+        tuple(ᶠz_pbl, ᶠz, ᶠN, ᶠVτ, pi_val, min_n_val, max_n_val, min_Vτ_val),
+    )
 
     Operators.column_reduce!(
         ᶠz_ref,
         input;
         init = (FT(0.0), FT(0.0), FT(0.0), false),
-        transform = first
-    ) do (z_ref_acc, ᶠz_pbl_acc, phase_acc, done), (ᶠz_pbl_itr, z_face, N_face, Vτ_face, pi_val, min_n_val, max_n_val, min_Vτ_val)
+        transform = first,
+    ) do (z_ref_acc, ᶠz_pbl_acc, phase_acc, done),
+    (
+        ᶠz_pbl_itr,
+        z_face,
+        N_face,
+        Vτ_face,
+        pi_val,
+        min_n_val,
+        max_n_val,
+        min_Vτ_val,
+    )
         if done
             # If already done, return the accumulated values
             return (z_ref_acc, ᶠz_pbl_acc, phase_acc, true)
         end
         if (z_face > ᶠz_pbl_itr)
-        # Only accumulate phase above z_pbl
-            phase_acc += (z_face - ᶠz_pbl_itr) * 
-                max(min_n_val, min(max_n_val, N_face)) / 
+            # Only accumulate phase above z_pbl
+            phase_acc +=
+                (z_face - ᶠz_pbl_itr) * max(min_n_val, min(max_n_val, N_face)) /
                 max(min_Vτ_val, Vτ_face)
-            
+
             # If phase exceeds π, stop and return current z_col as z_ref
             if phase_acc > pi_val
                 return (z_face, ᶠz_pbl_itr, phase_acc, true)
@@ -320,13 +339,13 @@ function calc_nonpropagating_forcing!(
     eps_val = eps(FT)
     half_val = FT(0.5)
     nan_val = FT(NaN)
-    
+
     input = @. lazy(tuple(ᶠz_ref, ᶠp, ᶠz, ᶠdz, eps_val, half_val))
 
     Operators.column_reduce!(
         ᶠp_ref,
         input;
-        init = nan_val
+        init = nan_val,
     ) do ᶠp_ref, (z_ref, ᶠp, ᶠz, ᶠdz, eps_val, half_val)
         if abs(ᶠz - z_ref) < (half_val * ᶠdz + eps_val)
             if isnan(ᶠp_ref)
@@ -335,7 +354,7 @@ function calc_nonpropagating_forcing!(
         end
         return ᶠp_ref
     end
-    
+
     L2 = Operators.LeftBiasedF2C(;)
     @. ᶜmask = L2.((ᶠz .> ᶠz_pbl) .&& (ᶠz .<= ᶠz_ref))
     @. ᶜweights = ᶜinterp.(ᶠp .- ᶠp_ref)
@@ -345,16 +364,12 @@ function calc_nonpropagating_forcing!(
 
     input = @. lazy(ifelse(ᶜmask != 0, ᶜdiff / ᶜweights, 0.0))
 
-    Operators.column_reduce!(
-        ᶜwtsum, 
-        input;
-        init = FT(0)
-    ) do acc, wtsum_field
+    Operators.column_reduce!(ᶜwtsum, input; init = FT(0)) do acc, wtsum_field
         return acc + wtsum_field
     end
 
     if any(isnan, parent(ᶜwtsum)) || any(x -> x == 0, parent(ᶜwtsum))
-    @warn "wtsum contains invalid values!"
+        @warn "wtsum contains invalid values!"
     end
 
     # compute drag
@@ -363,8 +378,18 @@ function calc_nonpropagating_forcing!(
 
 end
 
-function calc_propagate_forcing!(ᶜuforcing, ᶜvforcing, τ_x, τ_y, τ_l, τ_sat, dτ_sat_dz, ᶜρ)
-    parent(dτ_sat_dz) .= parent(Geometry.WVector.(ᶜgradᵥ.(τ_sat)).components.data.:1)
+function calc_propagate_forcing!(
+    ᶜuforcing,
+    ᶜvforcing,
+    τ_x,
+    τ_y,
+    τ_l,
+    τ_sat,
+    dτ_sat_dz,
+    ᶜρ,
+)
+    parent(dτ_sat_dz) .=
+        parent(Geometry.WVector.(ᶜgradᵥ.(τ_sat)).components.data.:1)
 
     @. ᶜuforcing -= τ_x / τ_l / ᶜρ * dτ_sat_dz
     @. ᶜvforcing -= τ_y / τ_l / ᶜρ * dτ_sat_dz
@@ -373,10 +398,10 @@ end
 
 function get_pbl_z(ᶜp, ᶜT, ᶜz, grav, cp_d)
     FT = eltype(cp_d)
-    
+
     # Initialize result field to hold z_pbl values
     result = similar(Fields.level(ᶜp, 1), FT)
-    
+
     # Get surface values (first level values)
     p_sfc = Fields.level(ᶜp, 1)
     T_sfc = Fields.level(ᶜT, 1)
@@ -389,28 +414,57 @@ function get_pbl_z(ᶜp, ᶜT, ᶜz, grav, cp_d)
     zero_val = FT(0)
 
     # Create a lazy tuple of inputs for column_reduce
-    input = @. lazy(tuple(ᶜp, ᶜT, ᶜz, p_sfc, T_sfc, z_sfc, grav_val, cp_d_val, half_val, temp_offset, zero_val))
+    input = @. lazy(
+        tuple(
+            ᶜp,
+            ᶜT,
+            ᶜz,
+            p_sfc,
+            T_sfc,
+            z_sfc,
+            grav_val,
+            cp_d_val,
+            half_val,
+            temp_offset,
+            zero_val,
+        ),
+    )
 
     # Perform the column reduction
     Operators.column_reduce!(
         result,
         input;
         init = FT(0),
-        transform = first # Extract just the z_pbl value
-    ) do z_pbl, (p_col, T_col, z_col, p_sfc, T_sfc, z_sfc, grav_val, cp_d_val, half_val, temp_offset, zero_val)
-        
+        transform = first, # Extract just the z_pbl value
+    ) do z_pbl,
+    (
+        p_col,
+        T_col,
+        z_col,
+        p_sfc,
+        T_sfc,
+        z_sfc,
+        grav_val,
+        cp_d_val,
+        half_val,
+        temp_offset,
+        zero_val,
+    )
+
         if z_pbl == zero_val
             z_pbl = z_sfc
         end
         # Check conditions
         p_threshold = p_col >= (half_val * p_sfc)
-        T_threshold = (T_sfc + temp_offset - T_col) > (grav_val / cp_d_val * (z_col - z_sfc))
-        
+        T_threshold =
+            (T_sfc + temp_offset - T_col) >
+            (grav_val / cp_d_val * (z_col - z_sfc))
+
         # If both conditions are met, update z_pbl to current height
         if p_threshold && T_threshold
             z_pbl = z_col
         end
-        
+
         # Move to next level
         return z_pbl
     end
@@ -460,7 +514,7 @@ function calc_base_flux!(
         topo_ϵ,
     ) = ogw_params
     (; hmax, hmin, t11, t12, t21, t22) = topo_info
-    
+
     FT = eltype(Fr_crit)
     γ = topo_γ
     β = topo_β
@@ -473,7 +527,7 @@ function calc_base_flux!(
         input;
         init = (FT(0.0), FT(0.0), FT(0.0), FT(0.0)),
     ) do (ρ_acc, u_acc, v_acc, N_acc), (ρ, u, v, N, z_col, z_target)
-        
+
         # Check if current level height is at or above z_pbl
         # Use the last valid level that satisfies z_col <= z_target
         if z_col <= z_target
@@ -482,54 +536,60 @@ function calc_base_flux!(
             return (ρ_acc, u_acc, v_acc, N_acc)
         end
     end
-    
+
     # These are views
     ρ_pbl = values_at_z_pbl.:1
     u_pbl = values_at_z_pbl.:2
     v_pbl = values_at_z_pbl.:3
     N_pbl = values_at_z_pbl.:4
-    
+
     # Calculate τ components
     @. τ_x = ρ_pbl * N_pbl * (t11 * u_pbl + t21 * v_pbl)
     @. τ_y = ρ_pbl * N_pbl * (t12 * u_pbl + t22 * v_pbl)
-    
+
     # Calculate Vτ using field operations
-    Vτ = @. lazy(max(
-        eps(FT),
-        -(u_pbl * τ_x + v_pbl * τ_y) / max(eps(FT), sqrt(τ_x^2 + τ_y^2))
-    ))
-    
+    Vτ = @. lazy(
+        max(
+            eps(FT),
+            -(u_pbl * τ_x + v_pbl * τ_y) / max(eps(FT), sqrt(τ_x^2 + τ_y^2)),
+        ),
+    )
+
     # Calculate Froude numbers
     Fr_max = @. lazy(max(FT(0), hmax) * N_pbl / Vτ)
     Fr_min = @. lazy(max(FT(0), hmin) * N_pbl / Vτ)
-    
+
     # Calculate U_sat
     @. U_sat = sqrt.(ρ_pbl / topo_ρscale * @. Vτ^3 / N_pbl / topo_L0)
-    
+
     # Calculate FrU values
     @. FrU_sat = Fr_crit * U_sat
     @. FrU_min = Fr_min * U_sat
     @. FrU_max = max(Fr_max * U_sat, FrU_min + eps(FT))
     @. FrU_clp = min(FrU_max, max(FrU_min, FrU_sat))
-    
+
     # Calculate drag components
     @. τ_l = ((FrU_max)^(2 + γ - ϵ) - (FrU_min)^(2 + γ - ϵ)) / (2 + γ - ϵ)
-    
+
     # Calculate propagating drag
-    @. τ_p = topo_a0 * (
-        (FrU_clp^(2 + γ - ϵ) - FrU_min^(2 + γ - ϵ)) / (2 + γ - ϵ) +
-        FrU_sat^(β + 2) * (FrU_max^(γ - ϵ - β) - FrU_clp^(γ - ϵ - β)) / (γ - ϵ - β)
-    )
-    
+    @. τ_p =
+        topo_a0 * (
+            (FrU_clp^(2 + γ - ϵ) - FrU_min^(2 + γ - ϵ)) / (2 + γ - ϵ) +
+            FrU_sat^(β + 2) * (FrU_max^(γ - ϵ - β) - FrU_clp^(γ - ϵ - β)) /
+            (γ - ϵ - β)
+        )
+
     # Calculate non-propagating drag
-    @. τ_np = topo_a1 * U_sat / (1 + β) * (
-        (FrU_max^(1 + γ - ϵ) - FrU_clp^(1 + γ - ϵ)) / (1 + γ - ϵ) -
-        FrU_sat^(β + 1) * (FrU_max^(γ - ϵ - β) - FrU_clp^(γ - ϵ - β)) / (γ - ϵ - β)
-    )
-    
+    @. τ_np =
+        topo_a1 * U_sat / (1 + β) * (
+            (FrU_max^(1 + γ - ϵ) - FrU_clp^(1 + γ - ϵ)) / (1 + γ - ϵ) -
+            FrU_sat^(β + 1) * (FrU_max^(γ - ϵ - β) - FrU_clp^(γ - ϵ - β)) /
+            (γ - ϵ - β)
+        )
+
     # Apply scaling
     @. τ_np = τ_np / max(Fr_crit, Fr_max)
-    
+
     return nothing
 end
 
@@ -537,7 +597,7 @@ function calc_saturation_profile!(
     ᶠτ_sat,
     ᶠVτ,
     #
-    U_sat, 
+    U_sat,
     FrU_sat,
     FrU_clp,
     FrU_max,
@@ -558,58 +618,64 @@ function calc_saturation_profile!(
     ᶜz,
 )
     # Extract parameters from tuple
-    (; Fr_crit, topo_ρscale, topo_L0, topo_a0, topo_γ, topo_β, topo_ϵ) = ogw_params
+    (; Fr_crit, topo_ρscale, topo_L0, topo_a0, topo_γ, topo_β, topo_ϵ) =
+        ogw_params
 
     FT = eltype(Fr_crit)
     γ = topo_γ
     β = topo_β
     ϵ = topo_ϵ
-    
+
     # Calculate Vτ at cell faces using field operations
-    ᶜVτ = @. lazy(max(
-        eps(FT),
-        (
-            -(u_phy * τ_x + v_phy * τ_y) / max(eps(FT), sqrt(τ_x^2 + τ_y^2))
-        )
+    ᶜVτ = @. lazy(
+        max(
+            eps(FT),
+            (-(u_phy * τ_x + v_phy * τ_y) / max(eps(FT), sqrt(τ_x^2 + τ_y^2))),
+        ),
     )
-    )
-    
+
     # Calculate derivatives for ᶠd2Vτdz
     # QN: Is the Julia compiler smart enough to inline these?
     # Lazy this (done)
     d2udz = lazy.(ᶜd2dz2(u_phy))
     d2vdz = lazy.(ᶜd2dz2(v_phy))
     # Calculate derivative for L1; tmp_field_2 == d2Vτdz
-    d2Vτdz = @. lazy(max(
-        eps(FT),
-        -(d2udz * τ_x + d2vdz * τ_y) / max(eps(FT), sqrt(τ_x^2 + τ_y^2))
-        )
+    d2Vτdz = @. lazy(
+        max(
+            eps(FT),
+            -(d2udz * τ_x + d2vdz * τ_y) / max(eps(FT), sqrt(τ_x^2 + τ_y^2)),
+        ),
     )
-    
+
     # Calculate tmp_field_1 == L1
     # Here on the RHS, tmp_field_2 == d2Vτdz
-    L1 = @. lazy(topo_L0 * max(FT(0.5), min(FT(2.0), FT(1.0) - FT(2.0) * ᶜVτ * d2Vτdz / ᶜN^2)))
-    
+    L1 = @. lazy(
+        topo_L0 *
+        max(FT(0.5), min(FT(2.0), FT(1.0) - FT(2.0) * ᶜVτ * d2Vτdz / ᶜN^2)),
+    )
+
     # Create field for U_k calculation
     # Here, U_k == tmp_field_1
-    U_k_field = @. lazy( sqrt(ᶜρ / topo_ρscale * ᶜVτ^3 / ᶜN / L1) )
-    
+    U_k_field = @. lazy(sqrt(ᶜρ / topo_ρscale * ᶜVτ^3 / ᶜN / L1))
+
     z_surf = Fields.level(ᶜz, 1)
     # Create combined input for column_accumulate
-    input = @. lazy(tuple(
-        FrU_clp,
-        FrU_sat,
-        U_k_field,
-        FrU_max,
-        FrU_min,
-        z_surf,
-        ᶜz, 
-        z_pbl,
-        topo_a0,
-        τ_p, 
-        U_sat
-    ))
-    
+    input = @. lazy(
+        tuple(
+            FrU_clp,
+            FrU_sat,
+            U_k_field,
+            FrU_max,
+            FrU_min,
+            z_surf,
+            ᶜz,
+            z_pbl,
+            topo_a0,
+            τ_p,
+            U_sat,
+        ),
+    )
+
     # Initialize the result field with τ_p at the lowest face
     fill!(ᶜτ_sat, 0.0)
 
@@ -619,7 +685,19 @@ function calc_saturation_profile!(
         init = (FT(0.0), FT(0.0)),
         transform = first,
     ) do (tau_sat_val, U_sat_val),
-        (FrU_clp0, FrU_sat0, U, FrU_max, FrU_min, z_surf, z_col, z_target, topo_a0, τ_p, U_sat)
+    (
+        FrU_clp0,
+        FrU_sat0,
+        U,
+        FrU_max,
+        FrU_min,
+        z_surf,
+        z_col,
+        z_target,
+        topo_a0,
+        τ_p,
+        U_sat,
+    )
 
         if z_col == z_surf
             U_sat_val = U_sat
@@ -632,43 +710,38 @@ function calc_saturation_profile!(
         if z_col <= z_target
             tau_sat_val = τ_p
         else
-            tau_sat_val = topo_a0 * (
-            (local_FrU_clp^(2 + γ - ϵ) - FrU_min^(2 + γ - ϵ)) / (2 + γ - ϵ) +
-            local_FrU_sat^2 * FrU_sat0^β *
-                (FrU_max^(γ - ϵ - β) - FrU_clp0^(γ - ϵ - β)) / (γ - ϵ - β) +
-            local_FrU_sat^2 *
-                (FrU_clp0^(γ - ϵ) - local_FrU_clp^(γ - ϵ)) / (γ - ϵ)
-            )
+            tau_sat_val =
+                topo_a0 * (
+                    (local_FrU_clp^(2 + γ - ϵ) - FrU_min^(2 + γ - ϵ)) /
+                    (2 + γ - ϵ) +
+                    local_FrU_sat^2 *
+                    FrU_sat0^β *
+                    (FrU_max^(γ - ϵ - β) - FrU_clp0^(γ - ϵ - β)) / (γ - ϵ - β) +
+                    local_FrU_sat^2 *
+                    (FrU_clp0^(γ - ϵ) - local_FrU_clp^(γ - ϵ)) / (γ - ϵ)
+                )
         end
 
         return (tau_sat_val, U_sat_val)
     end
-    
+
     top_values = Fields.level(ᶜτ_sat, Spaces.nlevels(axes(ᶜτ_sat)))
     p_surf = Fields.level(ᶜp, 1)
     p_top = Fields.level(ᶜp, Spaces.nlevels(axes(ᶜp)))
 
     zero_val = FT(0.0)
 
-    input = @. lazy(tuple(
-        top_values,
-        ᶜτ_sat,
-        p_surf,
-        p_top,
-        ᶜp,
-        zero_val,
-    ))
+    input = @. lazy(tuple(top_values, ᶜτ_sat, p_surf, p_top, ᶜp, zero_val))
 
     Operators.column_accumulate!(
         ᶜτ_sat,
         input;
         init = FT(0.0),
         transform = identity,
-    ) do τ_sat_val,
-        (top_values, ᶜτ_sat, p_surf, p_top, ᶜp, zero_val)
+    ) do τ_sat_val, (top_values, ᶜτ_sat, p_surf, p_top, ᶜp, zero_val)
 
         τ_sat_val = ᶜτ_sat
-        
+
         if top_values > zero_val
             τ_sat_val -= (top_values * (p_surf - ᶜp) / (p_surf - p_top))
         end

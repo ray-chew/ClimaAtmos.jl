@@ -1,5 +1,13 @@
 using ClimaCore:
-    Fields, Geometry, Domains, Meshes, Topologies, Spaces, Operators, DataLayouts, Utilities
+    Fields,
+    Geometry,
+    Domains,
+    Meshes,
+    Topologies,
+    Spaces,
+    Operators,
+    DataLayouts,
+    Utilities
 using ClimaCore
 using ClimaCore.CommonSpaces
 using NCDatasets
@@ -225,7 +233,13 @@ cp_m_out = similar(Y.c)
 ᶜts = similar(Y.c, CA.TD.PhaseEquil{FT})
 @. ᶜts = CA.TD.PhaseEquil_ρpq(thermo_params, Y.c.ρ, ᶜp, Y.c.qt)
 
-p = (; orographic_gravity_wave = CA.orographic_gravity_wave_cache(Y, ogw, topo_info))
+p = (;
+    orographic_gravity_wave = CA.orographic_gravity_wave_cache(
+        Y,
+        ogw,
+        topo_info,
+    )
+)
 
 # unpack internal solution arrays
 (; topo_ᶜτ_x, topo_ᶜτ_y, topo_ᶜτ_l, topo_ᶜτ_p, topo_ᶜτ_np) =
@@ -249,8 +263,14 @@ p = (; orographic_gravity_wave = CA.orographic_gravity_wave_cache(Y, ogw, topo_i
 (; topo_ᶜdτ_sat_dz) = p.orographic_gravity_wave
 
 # unpack temporary arrays for calc_nonpropagating_forcing
-(; topo_ᶠz_ref, topo_ᶠp_ref, topo_ᶜmask, topo_ᶜweights, topo_ᶜdiff, topo_ᶜwtsum) =
-    p.orographic_gravity_wave
+(;
+    topo_ᶠz_ref,
+    topo_ᶠp_ref,
+    topo_ᶜmask,
+    topo_ᶜweights,
+    topo_ᶜdiff,
+    topo_ᶜwtsum,
+) = p.orographic_gravity_wave
 
 # unpack loaded topographic information
 (; topo_ᶜinfo, ogw_params) = p.orographic_gravity_wave
@@ -298,8 +318,9 @@ p_bottom = Fields.level(ᶠp, half)
 p_second = Fields.level(ᶠp, 1 + half)
 
 # Calculate scale height from the two levels
-scale_height_values = (Fields.field_values(z_second) .- Fields.field_values(z_bottom)) ./ 
-log.(Fields.field_values(p_bottom) ./ Fields.field_values(p_second))
+scale_height_values =
+    (Fields.field_values(z_second) .- Fields.field_values(z_bottom)) ./
+    log.(Fields.field_values(p_bottom) ./ Fields.field_values(p_second))
 scale_height = Fields.Field(scale_height_values, axes(z_bottom))
 
 # Calculate the extrapolated height (one level below bottom)
@@ -312,9 +333,11 @@ z_extrapolated = Fields.Field(z_extrapolated_values, axes(z_bottom))
 
 # Extrapolate pressure using barometric formula: p = p₀ * exp(-z/H)
 Boundary_value = Fields.Field(
-    Fields.field_values(p_bottom) .* 
-    exp.((z_extrapolated_values .- Fields.field_values(z_bottom)) ./ scale_height_values),
-    axes(p_bottom)
+    Fields.field_values(p_bottom) .* exp.(
+        (z_extrapolated_values .- Fields.field_values(z_bottom)) ./
+        scale_height_values,
+    ),
+    axes(p_bottom),
 )
 
 CA.field_shiftface_down!(ᶠp, ᶠp_m1, Boundary_value)
@@ -356,7 +379,7 @@ CA.calc_saturation_profile!(
     topo_ᶠτ_sat,
     topo_ᶠVτ,
     # internal ogw parameters
-    topo_ᶜU_sat, 
+    topo_ᶜU_sat,
     topo_ᶜFrU_sat,
     topo_ᶜFrU_clp,
     topo_ᶜFrU_max,
@@ -369,11 +392,11 @@ CA.calc_saturation_profile!(
     # externally loaded gw parameters
     ogw_params,
     # dycore inputs
-    Y.c.ρ,             
+    Y.c.ρ,
     u_phy,
     v_phy,
     ᶜp,
-    ᶜN,   
+    ᶜN,
     ᶜz,
 )
 
@@ -430,7 +453,7 @@ vforcing_cpu = ClimaCore.to_cpu(topo_ᶜvforcing)
 gfdl_ca_udt_topo_cpu = ClimaCore.to_cpu(gfdl_ca_udt_topo)
 gfdl_ca_vdt_topo_cpu = ClimaCore.to_cpu(gfdl_ca_vdt_topo)
 ᶜz_cpu = ClimaCore.to_cpu(ᶜz)
-Y_cpu  = ClimaCore.to_cpu(Y)
+Y_cpu = ClimaCore.to_cpu(Y)
 
 ##################
 # plotting!!!!
@@ -465,7 +488,14 @@ close(nc)
 nlat = 90
 nlon = 180
 weightfile = joinpath(REMAP_DIR, "remap_weights.nc")
-create_weightfile(weightfile, axes(Y_cpu.c), axes(Y_cpu.f), nlat, nlon, mono = true)
+create_weightfile(
+    weightfile,
+    axes(Y_cpu.c),
+    axes(Y_cpu.f),
+    nlat,
+    nlon,
+    mono = true,
+)
 
 datafile_rll = joinpath(REMAP_DIR, "data_rll.nc")
 apply_remap(

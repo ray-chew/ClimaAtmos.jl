@@ -43,9 +43,7 @@ function orographic_gravity_wave_cache(Y, ogw::OrographicGravityWave)
         elevation_rll =
             AA.earth_orography_file_path(; context = ClimaComms.context(Y.c))
         radius =
-            Spaces.topology(
-                Spaces.horizontal_space(axes(Y.c)),
-            ).mesh.domain.radius
+            Spaces.topology(Spaces.horizontal_space(axes(Y.c))).mesh.domain.radius
         topo_info = compute_OGW_info(Y, elevation_rll, radius, γ, h_frac)
     elseif ogw.topo_info == "linear"
         # For user-defined analytical tests
@@ -87,7 +85,13 @@ function orographic_gravity_wave_cache(Y, ogw::OrographicGravityWave)
 
 end
 
-function orographic_gravity_wave_tendency!(Yₜ, Y, p, t, ::FullOrographicGravityWave)
+function orographic_gravity_wave_tendency!(
+    Yₜ,
+    Y,
+    p,
+    t,
+    ::FullOrographicGravityWave,
+)
     ᶜT = p.scratch.ᶜtemp_scalar
     (; params) = p
     (; ᶜts, ᶜp) = p.precomputed
@@ -416,9 +420,7 @@ function calc_saturation_profile!(
     # Vτ at cell faces
     @. Vτ = max(
         eps(FT),
-        (
-            -(u_phy * τ_x + v_phy * τ_y) / max(eps(FT), sqrt(τ_x^2 + τ_y^2))
-        )
+        (-(u_phy * τ_x + v_phy * τ_y) / max(eps(FT), sqrt(τ_x^2 + τ_y^2))),
     )
     d2udz = (ᶜd2dz2(u_phy, p))
     d2vdz = (ᶜd2dz2(v_phy, p))

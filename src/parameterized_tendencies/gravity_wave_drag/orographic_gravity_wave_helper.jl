@@ -92,11 +92,10 @@ function calc_velocity_potential(elev, lon, lat, earth_radius)
 
     # compute weights for the spatial running mean using the Blackman kernel
     ilat_range = Int.(round.(scale ./ deg2rad(dlat)))
-    ilon_range =
-        min.(
-            Int.(round.(scale ./ (deg2rad(dlon) .* cosd.(lat)))),
-            Int(round(length(lon) / 8)),
-        )
+    ilon_range = min.(
+        Int.(round.(scale ./ (deg2rad(dlon) .* cosd.(lat)))),
+        Int(round(length(lon) / 8)),
+    )
 
     χ = zeros(size(elev))
     for (i, ilon) in enumerate(lon)
@@ -108,32 +107,31 @@ function calc_velocity_potential(elev, lon, lat, earth_radius)
                 max(j - ilat_range[j], 1):min(j + ilat_range[j], length(lat))
 
             # compute weights for spatial (area) integration
-            arc =
-                acos.(
-                    min.(
-                        FT(1),
-                        reshape(
-                            repeat(
-                                cosd(jlat) .* cosd.(lat[jrange]),
-                                length(irange),
-                            ),
-                            length(jrange),
-                            :,
-                        )' .* reshape(
-                            repeat(cosd.(ilon .- lon[irange]), length(jrange)),
+            arc = acos.(
+                min.(
+                    FT(1),
+                    reshape(
+                        repeat(
+                            cosd(jlat) .* cosd.(lat[jrange]),
                             length(irange),
-                            :,
-                        ) .+
-                        reshape(
-                            repeat(
-                                sind(jlat) .* sind.(lat[jrange]),
-                                length(irange),
-                            ),
-                            length(jrange),
-                            :,
-                        )',
-                    )
-                )
+                        ),
+                        length(jrange),
+                        :,
+                    )' .* reshape(
+                        repeat(cosd.(ilon .- lon[irange]), length(jrange)),
+                        length(irange),
+                        :,
+                    ) .+
+                    reshape(
+                        repeat(
+                            sind(jlat) .* sind.(lat[jrange]),
+                            length(irange),
+                        ),
+                        length(jrange),
+                        :,
+                    )',
+                ),
+            )
             arc1 = arc ./ max.(arc, scale[j])
             wts =
                 reshape(
@@ -197,11 +195,10 @@ function calc_hpoz_latlon(elev, lon, lat, earth_radius)
         sind(40) ./ earth_radius ./ sind.(max.(FT(20), abs.(lat))) .* FT(100e3) # FT(200e3) is used in the codes sent by Steve Garner
 
     ilat_range = Int.(round.(scale ./ deg2rad(dlat)))
-    ilon_range =
-        min.(
-            Int.(round.(scale ./ (deg2rad(dlon) .* cosd.(lat)))),
-            Int(round(length(lon) / 16)),
-        )
+    ilon_range = min.(
+        Int.(round.(scale ./ (deg2rad(dlon) .* cosd.(lat)))),
+        Int(round(length(lon) / 16)),
+    )
 
     hmax = zeros(size(elev))
     for i in 1:length(lon)
@@ -351,22 +348,34 @@ function move_topo_info_to_gpu(Y, topo_info)
     hmin = similar(Fields.level(Y.c.ρ, 1))
     hmax = similar(Fields.level(Y.c.ρ, 1))
 
-    parent(t11) .= ClimaCore.to_device(ClimaComms.CUDADevice(), copy(parent(topo_info.t11)))
-    parent(t12) .= ClimaCore.to_device(ClimaComms.CUDADevice(), copy(parent(topo_info.t12)))
-    parent(t21) .= ClimaCore.to_device(ClimaComms.CUDADevice(), copy(parent(topo_info.t21)))
-    parent(t22) .= ClimaCore.to_device(ClimaComms.CUDADevice(), copy(parent(topo_info.t22)))
-    parent(hmin) .= ClimaCore.to_device(ClimaComms.CUDADevice(), copy(parent(topo_info.hmin)))
-    parent(hmax) .= ClimaCore.to_device(ClimaComms.CUDADevice(), copy(parent(topo_info.hmax)))
+    parent(t11) .= ClimaCore.to_device(
+        ClimaComms.CUDADevice(),
+        copy(parent(topo_info.t11)),
+    )
+    parent(t12) .= ClimaCore.to_device(
+        ClimaComms.CUDADevice(),
+        copy(parent(topo_info.t12)),
+    )
+    parent(t21) .= ClimaCore.to_device(
+        ClimaComms.CUDADevice(),
+        copy(parent(topo_info.t21)),
+    )
+    parent(t22) .= ClimaCore.to_device(
+        ClimaComms.CUDADevice(),
+        copy(parent(topo_info.t22)),
+    )
+    parent(hmin) .= ClimaCore.to_device(
+        ClimaComms.CUDADevice(),
+        copy(parent(topo_info.hmin)),
+    )
+    parent(hmax) .= ClimaCore.to_device(
+        ClimaComms.CUDADevice(),
+        copy(parent(topo_info.hmax)),
+    )
     # )
 
-    topo_info = (; 
-        t11 = t11,
-        t12 = t12,
-        t21 = t21,
-        t22 = t22,
-        hmin = hmin,
-        hmax = hmax,
-)
+    topo_info =
+        (; t11 = t11, t12 = t12, t21 = t21, t22 = t22, hmin = hmin, hmax = hmax)
 
     return topo_info
 end
