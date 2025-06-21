@@ -85,11 +85,6 @@ function orographic_gravity_wave_cache(Y, ogw::OrographicGravityWave, topo_info)
         topo_τ_l = similar(Fields.level(Y.c.ρ, 1)),
         topo_τ_p = similar(Fields.level(Y.c.ρ, 1)),
         topo_τ_np = similar(Fields.level(Y.c.ρ, 1)),
-        # topo_τ_x = Fields.Field(FT, axes(Y.f.u₃)),
-        # topo_τ_y = Fields.Field(FT, axes(Y.f.u₃)),
-        # topo_τ_l = Fields.Field(FT, axes(Y.f.u₃)),
-        # topo_τ_p = Fields.Field(FT, axes(Y.f.u₃)),
-        # topo_τ_np = Fields.Field(FT, axes(Y.f.u₃)),
         topo_U_sat = similar(Fields.level(Y.c.ρ, 1)),
         topo_FrU_sat = similar(Fields.level(Y.c.ρ, 1)),
         topo_FrU_max = similar(Fields.level(Y.c.ρ, 1)),
@@ -472,7 +467,7 @@ function calc_base_flux!(
     ᶜz,
     ᶜN,
     z_pbl,
-    k_pbl_values
+    values_at_z_pbl
 )
     (;
         Fr_crit,
@@ -493,7 +488,7 @@ function calc_base_flux!(
     input = @. lazy(tuple(ᶜρ, u_phy, v_phy, ᶜN, ᶜz, z_pbl))
 
     Operators.column_reduce!(
-        k_pbl_values,
+        values_at_z_pbl,
         input;
         init = (FT(0.0), FT(0.0), FT(0.0), FT(0.0)),
     ) do (ρ_acc, u_acc, v_acc, N_acc), (ρ, u, v, N, z_col, z_target)
@@ -508,10 +503,10 @@ function calc_base_flux!(
     end
     
     # These are views
-    ρ_pbl = k_pbl_values.:1
-    u_pbl = k_pbl_values.:2
-    v_pbl = k_pbl_values.:3
-    N_pbl = k_pbl_values.:4
+    ρ_pbl = values_at_z_pbl.:1
+    u_pbl = values_at_z_pbl.:2
+    v_pbl = values_at_z_pbl.:3
+    N_pbl = values_at_z_pbl.:4
     
     # Calculate τ components
     @. τ_x = ρ_pbl * N_pbl * (t11 * u_pbl + t21 * v_pbl)
