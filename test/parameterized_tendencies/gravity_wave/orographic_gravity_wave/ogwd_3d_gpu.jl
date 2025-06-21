@@ -232,14 +232,14 @@ cp_m_out = similar(Y.c)
 
 p = (; orographic_gravity_wave = CA.orographic_gravity_wave_cache(Y, ogw, topo_info))
 
-(; topo_k_pbl, topo_ᶜz_pbl, topo_ᶠz_pbl, topo_τ_x, topo_τ_y, topo_τ_l, topo_τ_p, topo_τ_np) =
+(; topo_ᶜz_pbl, topo_ᶠz_pbl, topo_τ_x, topo_τ_y, topo_τ_l, topo_τ_p, topo_τ_np) =
     p.orographic_gravity_wave
 (; topo_ᶠz_ref, topo_ᶠp_ref, topo_ᶜmask, topo_ᶜweights, topo_ᶜdiff, topo_ᶜwtsum) =
     p.orographic_gravity_wave
 (; topo_ᶜτ_sat, topo_ᶠτ_sat) = p.orographic_gravity_wave
 (; topo_U_sat, topo_FrU_sat, topo_FrU_max, topo_FrU_min, topo_FrU_clp) =
     p.orographic_gravity_wave
-(; topo_ᶜVτ, topo_ᶠVτ, topo_base_Vτ, topo_tmp_1, topo_tmp_2, topo_k_pbl_values) =
+(; topo_ᶜVτ, topo_ᶠVτ, topo_base_Vτ, topo_tmp_1, topo_tmp_2, topo_values_at_z_pbl) =
     p.orographic_gravity_wave
 (; topo_d2Vτdz, topo_L1, topo_U_k_field, topo_level_idx) = p.orographic_gravity_wave
 (; hmax, hmin, t11, t12, t21, t22) = p.orographic_gravity_wave.topo_info
@@ -270,7 +270,6 @@ ogw_params = (;
 ᶠz = Fields.coordinate_field(Y.f).z
 
 # get PBL info
-topo_k_pbl .= CA.get_pbl(ᶜp, ᶜT, copy(ᶜz), grav, cp_d)
 topo_ᶜz_pbl .= CA.get_pbl_z(ᶜp, ᶜT, copy(ᶜz), grav, cp_d)
 # we copy the z_pbl from a cell-centered to face array.
 # the z-values don't change, but this is necessary for
@@ -345,12 +344,13 @@ CA.calc_base_flux!(
     t12,
     t21,
     t22,
-    copy(Y.c.ρ),
+    Y.c.ρ,
     u_phy,
     v_phy,
+    ᶜz,
     ᶜN,
     topo_ᶜz_pbl,
-    topo_k_pbl_values
+    topo_values_at_z_pbl
 )
 
 CA.calc_saturation_profile!(
@@ -370,7 +370,7 @@ CA.calc_saturation_profile!(
     topo_τ_p,                   
     u_phy,
     v_phy,
-    copy(Y.c.ρ),
+    Y.c.ρ,
     ᶜp,
     topo_ᶜz_pbl,
     topo_d2Vτdz,
@@ -391,7 +391,7 @@ CA.calc_propagate_forcing!(
     topo_τ_y,
     topo_τ_l,
     topo_ᶠτ_sat,
-    copy(Y.c.ρ),
+    Y.c.ρ,
     ᶜdτ_sat_dz
 )
 

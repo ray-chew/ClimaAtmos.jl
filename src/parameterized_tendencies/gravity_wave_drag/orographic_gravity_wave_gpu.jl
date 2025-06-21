@@ -104,10 +104,10 @@ function orographic_gravity_wave_cache(Y, ogw::OrographicGravityWave, topo_info)
         topo_level_idx = topo_level_idx,
 
         topo_base_Vτ = similar(Fields.level(Y.c.ρ, 1), FT),
-        topo_k_pbl = similar(Fields.level(Y.c.ρ, 1), FT),
         topo_ᶜz_pbl = similar(Fields.level(Y.c.ρ, 1)),
         topo_ᶠz_pbl = similar(Fields.level(Y.f.u₃, half)),
 
+        # non-propagating 
         topo_ᶠz_ref = similar(Fields.level(Y.f.u₃, half), FT),
         topo_ᶠp_ref = similar(Fields.level(Y.f.u₃, half), FT),
         topo_ᶜmask = similar(Y.c.ρ, FT),
@@ -115,7 +115,7 @@ function orographic_gravity_wave_cache(Y, ogw::OrographicGravityWave, topo_info)
         topo_ᶜdiff = similar(Y.c.ρ, FT),
         topo_ᶜwtsum = similar(Fields.level(Y.c.ρ, 1), FT),
 
-        topo_k_pbl_values = similar(Fields.level(Y.c.ρ, 1), Tuple{FT, FT, FT, FT}),
+        topo_values_at_z_pbl = similar(Fields.level(Y.c.ρ, 1), Tuple{FT, FT, FT, FT}),
         topo_info = topo_info,
         ᶜN = similar(Fields.level(Y.c.ρ, 1)),
         uforcing = similar(Y.c.ρ, FT),
@@ -391,50 +391,6 @@ function calc_propagate_forcing!(ᶜuforcing, ᶜvforcing, τ_x, τ_y, τ_l, τ_
     return nothing
 end
 
-function get_pbl(ᶜp, ᶜT, ᶜz, grav, cp_d)
-    FT = eltype(cp_d)
-    
-    # Initialize result field to hold k_pbl values
-    result = similar(Fields.level(ᶜp, 1), FT)
-    
-    # Get surface values (first level values)
-    p_sfc = Fields.level(ᶜp, 1)
-    T_sfc = Fields.level(ᶜT, 1)
-    z_sfc = Fields.level(ᶜz, 1)
-
-    # Convert constants to the appropriate type beforehand
-    half_val = FT(0.5)
-    temp_offset = FT(1.5)
-    grav_val = FT(grav)
-    cp_d_val = FT(cp_d)
-
-    # Create a lazy tuple of inputs for column_reduce
-    input = @. lazy(tuple(ᶜp, ᶜT, ᶜz, p_sfc, T_sfc, z_sfc, half_val, temp_offset, grav_val, cp_d_val))
-
-    # Perform the column reduction
-    Operators.column_reduce!(
-        result,
-        input;
-        init = (1, 2),  # (k_pbl, current_level)
-        transform = first # Extract just the k_pbl value
-    ) do (k_pbl, level_idx), (p_col, T_col, z_col, p_sfc, T_sfc, z_sfc, half_val, temp_offset, grav_val, cp_d_val)
-        
-        # Check conditions
-        p_threshold = p_col >= (half_val * p_sfc)
-        T_threshold = (T_sfc + temp_offset - T_col) > (grav_val / cp_d_val * (z_col - z_sfc))
-        
-        # If both conditions are met, update k_pbl
-        if p_threshold && T_threshold
-            k_pbl = level_idx
-        end
-        
-        # Move to next level
-        return (k_pbl, level_idx + 1)
-    end
-
-    return result
-end
-
 function get_pbl_z(ᶜp, ᶜT, ᶜz, grav, cp_d)
     FT = eltype(cp_d)
     
@@ -513,13 +469,11 @@ function calc_base_flux!(
     ᶜρ,
     u_phy,
     v_phy,
+    ᶜz,
     ᶜN,
     z_pbl,
     k_pbl_values
 )
-    # Extract parameters
-    # QN: When should I pass an array as argument, and when should I extract them from cache?
-    # Extract parameters from tuple
     (;
         Fr_crit,
         topo_ρscale,
@@ -535,28 +489,7 @@ function calc_base_flux!(
     γ = topo_γ
     β = topo_β
     ϵ = topo_ϵ
-    
-    # Create an input tuple for column_reduce to extract k_pbl level data
-    # input = @. lazy(tuple(ᶜρ, u_phy, v_phy, ᶜN, k_pbl))
-    
-    # Use column_reduce to extract values at k_pbl level
-    # k_pbl_values = similar(hmax, Tuple{FT, FT, FT, FT})
-    # Operators.column_reduce!(
-    #     k_pbl_values,
-    #     input;
-    #     init = (1, nothing, nothing, nothing, nothing),  # Start with level index 1
-    #     transform = x -> (x[2], x[3], x[4], x[5])        # Extract just the values of interest
-    # ) do (level_idx, ρ_acc, u_acc, v_acc, N_acc), (ρ, u, v, N, k_level)
-               
-    #     # If we're at the target level, extract values
-    #     if level_idx == k_level
-    #         return (level_idx + 1, ρ, u, v, N)
-    #     # Otherwise, just increment the level counter
-    #     else
-    #         return (level_idx + 1, ρ_acc, u_acc, v_acc, N_acc)
-    #     end
-    # end
-    ᶜz = Fields.coordinate_field(ᶜρ).z
+
     input = @. lazy(tuple(ᶜρ, u_phy, v_phy, ᶜN, ᶜz, z_pbl))
 
     Operators.column_reduce!(
@@ -574,8 +507,6 @@ function calc_base_flux!(
         end
     end
     
-    # Extract values from the tuple
-    # QN: Is this a view or a copy?
     # These are views
     ρ_pbl = k_pbl_values.:1
     u_pbl = k_pbl_values.:2
