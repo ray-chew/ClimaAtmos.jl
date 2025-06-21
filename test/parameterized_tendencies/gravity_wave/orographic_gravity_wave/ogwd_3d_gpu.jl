@@ -224,39 +224,40 @@ topo_info = CA.move_topo_info_to_gpu(Y, topo_info)
 cp_m_out = similar(Y.c)
 ᶜts = similar(Y.c, CA.TD.PhaseEquil{FT})
 @. ᶜts = CA.TD.PhaseEquil_ρpq(thermo_params, Y.c.ρ, ᶜp, Y.c.qt)
-# @. cp_m_out = CA.TD.cp_m(thermo_params, ᶜts)
-
-# Moving the thermodynamics parameters to the GPU
-# parent(ᶜts) .= ClimaCore.to_device(ClimaComms.CUDADevice(), copy(parent(ᶜts_cpu)))
-# parent(cp_m_out) .= ClimaCore.to_device(ClimaComms.CUDADevice(), copy(parent(cp_m_out_cpu)))
 
 p = (; orographic_gravity_wave = CA.orographic_gravity_wave_cache(Y, ogw, topo_info))
 
-(; topo_ᶜz_pbl, topo_ᶠz_pbl, topo_τ_x, topo_τ_y, topo_τ_l, topo_τ_p, topo_τ_np) =
+# unpack internal solution arrays
+(; topo_ᶜτ_x, topo_ᶜτ_y, topo_ᶜτ_l, topo_ᶜτ_p, topo_ᶜτ_np) =
     p.orographic_gravity_wave
+
+# unpack external solution arrays
+(; topo_ᶜuforcing, topo_ᶜvforcing) = p.orographic_gravity_wave
+
+# unpack temporary internal arrays
+(; topo_ᶜτ_sat, topo_ᶠτ_sat) = p.orographic_gravity_wave
+(; topo_ᶜU_sat, topo_ᶜFrU_sat, topo_ᶜFrU_max, topo_ᶜFrU_min, topo_ᶜFrU_clp) =
+    p.orographic_gravity_wave
+
+# unpack solution arrays for get_pbl_z
+(; topo_ᶠVτ, topo_ᶜz_pbl, topo_ᶠz_pbl) = p.orographic_gravity_wave
+
+# unpack temporary arrays for calc_base_flux
+(; topo_ᶜvalues_at_z_pbl) = p.orographic_gravity_wave
+
+# unpack temporary arrays for calc_propagate_forcing
+(; topo_ᶜdτ_sat_dz) = p.orographic_gravity_wave
+
+# unpack temporary arrays for calc_nonpropagating_forcing
 (; topo_ᶠz_ref, topo_ᶠp_ref, topo_ᶜmask, topo_ᶜweights, topo_ᶜdiff, topo_ᶜwtsum) =
     p.orographic_gravity_wave
-(; topo_ᶜτ_sat, topo_ᶠτ_sat) = p.orographic_gravity_wave
-(; topo_U_sat, topo_FrU_sat, topo_FrU_max, topo_FrU_min, topo_FrU_clp) =
-    p.orographic_gravity_wave
-(; topo_ᶜVτ, topo_ᶠVτ, topo_base_Vτ, topo_tmp_1, topo_tmp_2, topo_values_at_z_pbl) =
-    p.orographic_gravity_wave
-(; topo_d2Vτdz, topo_L1, topo_U_k_field, topo_level_idx) = p.orographic_gravity_wave
-(; hmax, hmin, t11, t12, t21, t22) = p.orographic_gravity_wave.topo_info
-(; ᶜweights, ᶜdTdz, ᶜdτ_sat_dz) = p.orographic_gravity_wave
-(; uforcing, vforcing) = p.orographic_gravity_wave
 
-# Extract parameters once and pack into tuple
-ogw_params = (;
-    Fr_crit = p.orographic_gravity_wave.Fr_crit,
-    topo_ρscale = p.orographic_gravity_wave.topo_ρscale,
-    topo_L0 = p.orographic_gravity_wave.topo_L0,
-    topo_a0 = p.orographic_gravity_wave.topo_a0,
-    topo_a1 = p.orographic_gravity_wave.topo_a1,
-    topo_γ = p.orographic_gravity_wave.topo_γ,
-    topo_β = p.orographic_gravity_wave.topo_β,
-    topo_ϵ = p.orographic_gravity_wave.topo_ϵ,
-)
+# unpack loaded topographic information
+(; topo_ᶜinfo, ogw_params) = p.orographic_gravity_wave
+
+# unpack temporary compute_tendency arrays, to be removed
+(; topo_ᶜdTdz) = p.orographic_gravity_wave
+
 
 # operators
 ᶜgradᵥ = Operators.GradientF2C()
@@ -278,8 +279,8 @@ parent(topo_ᶠz_pbl) .= parent(topo_ᶜz_pbl)
 topo_ᶠz_pbl = topo_ᶠz_pbl.components.data.:1
 
 # buoyancy frequency at cell centers
-parent(ᶜdTdz) .= parent(Geometry.WVector.(ᶜgradᵥ.(ᶠinterp.(ᶜT))))
-ᶜN = @. (grav / ᶜT) * (ᶜdTdz + grav / CA.TD.cp_m(thermo_params, ᶜts)) # this is actually ᶜN^2
+parent(topo_ᶜdTdz) .= parent(Geometry.WVector.(ᶜgradᵥ.(ᶠinterp.(ᶜT))))
+ᶜN = @. (grav / ᶜT) * (topo_ᶜdTdz + grav / CA.TD.cp_m(thermo_params, ᶜts)) # this is actually ᶜN^2
 ᶜN = @. ifelse(ᶜN < eps(FT), sqrt(eps(FT)), sqrt(abs(ᶜN))) # to avoid small numbers
 
 # prepare physical uv input variables for gravity_wave_forcing()
@@ -324,107 +325,108 @@ CA.field_shiftface_down!(ᶠp, ᶠp_m1, Boundary_value)
 
 # compute base flux at k_pbl
 CA.calc_base_flux!(
-    topo_τ_x,
-    topo_τ_y,
-    topo_τ_l,
-    topo_τ_p,
-    topo_τ_np,
-    topo_U_sat,
-    topo_FrU_sat,
-    topo_FrU_max,
-    topo_FrU_min,
-    topo_FrU_clp,
-    topo_base_Vτ,
-    topo_tmp_1,
-    topo_tmp_2,
+    # soluion fields to be updated
+    topo_ᶜτ_x,
+    topo_ᶜτ_y,
+    topo_ᶜτ_l,
+    topo_ᶜτ_p,
+    topo_ᶜτ_np,
+    # internal ogw parameters
+    topo_ᶜU_sat,
+    topo_ᶜFrU_sat,
+    topo_ᶜFrU_clp,
+    topo_ᶜFrU_max,
+    topo_ᶜFrU_min,
+    topo_ᶜz_pbl,
+    # temporary internal ogw parameters
+    topo_ᶜvalues_at_z_pbl,
+    # externally loaded gw parameters
     ogw_params,
-    hmax,
-    hmin,
-    t11,
-    t12,
-    t21,
-    t22,
+    topo_ᶜinfo,
+    # dycore inputs
     Y.c.ρ,
     u_phy,
     v_phy,
     ᶜz,
     ᶜN,
-    topo_ᶜz_pbl,
-    topo_values_at_z_pbl
 )
 
 CA.calc_saturation_profile!(
-    topo_ᶜτ_sat,
+    # solution fields to be updated
     topo_ᶠτ_sat,
-    topo_U_sat, 
-    topo_FrU_sat,
-    topo_FrU_clp,
-    topo_ᶜVτ,
     topo_ᶠVτ,
+    # internal ogw parameters
+    topo_ᶜU_sat, 
+    topo_ᶜFrU_sat,
+    topo_ᶜFrU_clp,
+    topo_ᶜFrU_max,
+    topo_ᶜFrU_min,
+    topo_ᶜτ_sat,
+    topo_ᶜτ_x,
+    topo_ᶜτ_y,
+    topo_ᶜτ_p,
+    topo_ᶜz_pbl,
+    # externally loaded gw parameters
     ogw_params,
-    topo_FrU_max,
-    topo_FrU_min,
-    ᶜN,
-    topo_τ_x,
-    topo_τ_y,
-    topo_τ_p,                   
+    # dycore inputs
+    Y.c.ρ,             
     u_phy,
     v_phy,
-    Y.c.ρ,
     ᶜp,
-    topo_ᶜz_pbl,
-    topo_d2Vτdz,
-    topo_L1,
-    topo_U_k_field,
-    topo_level_idx,
+    ᶜN,   
+    ᶜz,
 )
-
-# a place holder to store physical forcing on uv
-# uforcing = zeros(axes(u_phy))
-# vforcing = zeros(axes(v_phy))
 
 # compute drag tendencies due to propagating part
 CA.calc_propagate_forcing!(
-    uforcing,
-    vforcing,
-    topo_τ_x,
-    topo_τ_y,
-    topo_τ_l,
+    # solution fields to be updated
+    topo_ᶜuforcing,
+    topo_ᶜvforcing,
+    # internal ogw parameters
+    topo_ᶜτ_x,
+    topo_ᶜτ_y,
+    topo_ᶜτ_l,
     topo_ᶠτ_sat,
+    # internal temporary ogw parameters
+    topo_ᶜdτ_sat_dz,
+    # dycore inputs
     Y.c.ρ,
-    ᶜdτ_sat_dz
 )
 
 CA.calc_nonpropagating_forcing!(
-    uforcing,
-    vforcing,
-    ᶠN,
+    # solution fields to be updated
+    topo_ᶜuforcing,
+    topo_ᶜvforcing,
+    # internal ogw parameters
+    topo_ᶜτ_x,
+    topo_ᶜτ_y,
+    topo_ᶜτ_l,
+    topo_ᶜτ_np,
     topo_ᶠVτ,
-    ᶠp,
-    ᶠp_m1,
-    topo_τ_x,
-    topo_τ_y,
-    topo_τ_l,
-    topo_τ_np,
-    ᶠz,
     topo_ᶠz_pbl,
-    ᶠdz,
-    grav,
+    # internal temporary ogw parameters
     topo_ᶠz_ref,
     topo_ᶠp_ref,
     topo_ᶜmask,
     topo_ᶜweights,
     topo_ᶜdiff,
     topo_ᶜwtsum,
+    # dycore
+    ᶠp,
+    ᶠp_m1,
+    ᶠN,
+    ᶠz,
+    ᶠdz,
+    grav,
 )
 
 # constrain forcing
-@. uforcing = max(FT(-3e-3), min(FT(3e-3), uforcing))
-@. vforcing = max(FT(-3e-3), min(FT(3e-3), vforcing))
+@. topo_ᶜuforcing = max(FT(-3e-3), min(FT(3e-3), topo_ᶜuforcing))
+@. topo_ᶜvforcing = max(FT(-3e-3), min(FT(3e-3), topo_ᶜvforcing))
 
 # Move GPU arrays back to CPU for plotting
-uforcing_cpu = ClimaCore.to_cpu(uforcing)
-vforcing_cpu = ClimaCore.to_cpu(vforcing)
+uforcing_cpu = ClimaCore.to_cpu(topo_ᶜuforcing)
+vforcing_cpu = ClimaCore.to_cpu(topo_ᶜvforcing)
 gfdl_ca_udt_topo_cpu = ClimaCore.to_cpu(gfdl_ca_udt_topo)
 gfdl_ca_vdt_topo_cpu = ClimaCore.to_cpu(gfdl_ca_vdt_topo)
 ᶜz_cpu = ClimaCore.to_cpu(ᶜz)
