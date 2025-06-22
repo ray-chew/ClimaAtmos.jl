@@ -87,7 +87,7 @@ function orographic_gravity_wave_cache(Y, ogw::OrographicGravityWave, topo_info)
         topo_ᶜFrU_clp = similar(Fields.level(Y.c.ρ, 1)),
 
         topo_ᶜz_pbl = similar(Fields.level(Y.c.ρ, 1)),
-        topo_ᶠz_pbl = similar(Fields.level(Y.f.u₃, half)),
+        topo_ᶠz_pbl = similar(Fields.level(Y.f.u₃, half), FT),
 
         # non-propagating 
         topo_ᶠz_ref = similar(Fields.level(Y.f.u₃, half), FT),
@@ -108,6 +108,10 @@ function orographic_gravity_wave_cache(Y, ogw::OrographicGravityWave, topo_info)
         topo_ᶜdτ_sat_dz = similar(Y.c.ρ),
 
         topo_ᶜdTdz = similar(Y.c.ρ),
+        topo_ᶠp = similar(Y.f.u₃, FT),
+        topo_ᶠp₋₁ = similar(Y.f.u₃, FT),
+        topo_ᶜN = similar(Y.c.ρ),
+        topo_ᶠN = similar(Y.f.u₃, FT),
     )
 
 end

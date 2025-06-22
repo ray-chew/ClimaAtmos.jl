@@ -207,7 +207,6 @@ Y = ClimaCore.to_device(ClimaComms.CUDADevice(), copy(Y))
 
 # pre-compute thermal vars
 thermo_params = CA.TD.Parameters.ThermodynamicsParameters(FT)
-
 thermo_params = ClimaCore.to_device(ClimaComms.CUDADevice(), thermo_params)
 
 ᶜT_cpu = gfdl_ca_temp
@@ -222,13 +221,7 @@ parent(ᶜT) .= ClimaCore.to_device(ClimaComms.CUDADevice(), copy(parent(ᶜT_cp
 topo_info = CA.move_topo_info_to_gpu(Y, topo_info)
 
 # move cache to the GPU
-# topo_info = ClimaCore.to_device(ClimaComms.CUDADevice(), topo_info)
-# ogw = ClimaCore.to_device(ClimaComms.CUDADevice(), ogw)
-# Y = ClimaCore.to_device(ClimaComms.CUDADevice(), copy(Y))
-# topo_info = Fields.Field(ClimaCore.to_device(ClimaComms.CUDADevice(), Fields.field_values(topo_info)), axes(Y.c))
-
 # initialize GPU thermodynamics vars
-# ᶜts = similar(Y.c)
 cp_m_out = similar(Y.c)
 ᶜts = similar(Y.c, CA.TD.PhaseEquil{FT})
 @. ᶜts = CA.TD.PhaseEquil_ρpq(thermo_params, Y.c.ρ, ᶜp, Y.c.qt)
@@ -276,19 +269,24 @@ p = (;
 (; topo_ᶜinfo, ogw_params) = p.orographic_gravity_wave
 
 # unpack temporary compute_tendency arrays, to be removed
-(; topo_ᶜdTdz) = p.orographic_gravity_wave
-
+(; topo_ᶜdTdz, topo_ᶠp, topo_ᶠp₋₁, topo_ᶜN, topo_ᶠN) = p.orographic_gravity_wave
 
 # operators
+# consider moving to abbreviations; check existing abbreviations too.
 ᶜgradᵥ = Operators.GradientF2C()
 ᶠinterp = Operators.InterpolateC2F(
     bottom = Operators.Extrapolate(),
     top = Operators.Extrapolate(),
 )
 
-# z
+# prepare physical uv input variables for gravity_wave_forcing()
+u_phy = Y.c.u_phy
+v_phy = Y.c.v_phy
+
+# prepare z-related quantities
 ᶜz = Fields.coordinate_field(Y.c).z
 ᶠz = Fields.coordinate_field(Y.f).z
+ᶠdz = Fields.Δz_field(axes(Y.f))
 
 # get PBL info
 topo_ᶜz_pbl .= CA.get_pbl_z(ᶜp, ᶜT, copy(ᶜz), grav, cp_d)
@@ -296,40 +294,32 @@ topo_ᶜz_pbl .= CA.get_pbl_z(ᶜp, ᶜT, copy(ᶜz), grav, cp_d)
 # the z-values don't change, but this is necessary for
 # calc_nonpropagating_forcing! to work on the GPU
 parent(topo_ᶠz_pbl) .= parent(topo_ᶜz_pbl)
-topo_ᶠz_pbl = topo_ᶠz_pbl.components.data.:1
 
 # buoyancy frequency at cell centers
 parent(topo_ᶜdTdz) .= parent(Geometry.WVector.(ᶜgradᵥ.(ᶠinterp.(ᶜT))))
-ᶜN = @. (grav / ᶜT) * (topo_ᶜdTdz + grav / CA.TD.cp_m(thermo_params, ᶜts)) # this is actually ᶜN^2
-ᶜN = @. ifelse(ᶜN < eps(FT), sqrt(eps(FT)), sqrt(abs(ᶜN))) # to avoid small numbers
+@. topo_ᶜN = (grav / ᶜT) * (topo_ᶜdTdz + grav / CA.TD.cp_m(thermo_params, ᶜts)) # this is actually topo_ᶜN^2
+@. topo_ᶜN = ifelse(topo_ᶜN < eps(FT), sqrt(eps(FT)), sqrt(abs(topo_ᶜN))) # to avoid small numbers
+# buoyancy frequency at cell faces
+@. topo_ᶠN = ᶠinterp.(topo_ᶜN)
 
-# prepare physical uv input variables for gravity_wave_forcing()
-u_phy = Y.c.u_phy
-v_phy = Y.c.v_phy
-
-ᶠp = similar(Y.f.u₃).components.data.:1
-ᶠp .= ᶠinterp.(ᶜp)
-ᶠp_m1 = similar(ᶠp)
+# get ᶠp₋₁, the pressure at the level below the bottom level
+@. topo_ᶠp = ᶠinterp.(ᶜp)
 
 # More explicit scale height approach for pressure extrapolation
 z_bottom = Fields.level(ᶠz, half)
 z_second = Fields.level(ᶠz, 1 + half)
-p_bottom = Fields.level(ᶠp, half)
-p_second = Fields.level(ᶠp, 1 + half)
+p_bottom = Fields.level(topo_ᶠp, half)
+p_second = Fields.level(topo_ᶠp, 1 + half)
 
+# Consider lazying below after moving to compute_tendency
 # Calculate scale height from the two levels
 scale_height_values =
-    (Fields.field_values(z_second) .- Fields.field_values(z_bottom)) ./
+    Fields.field_values(z_second) .- Fields.field_values(z_bottom) ./
     log.(Fields.field_values(p_bottom) ./ Fields.field_values(p_second))
-scale_height = Fields.Field(scale_height_values, axes(z_bottom))
 
 # Calculate the extrapolated height (one level below bottom)
 dz_values = Fields.field_values(z_second) .- Fields.field_values(z_bottom)
-dz = Fields.Field(dz_values, axes(z_bottom))
 z_extrapolated_values = Fields.field_values(z_bottom) .- dz_values
-z_extrapolated = Fields.Field(z_extrapolated_values, axes(z_bottom))
-
-ᶠdz = Fields.Δz_field(axes(Y.f))
 
 # Extrapolate pressure using barometric formula: p = p₀ * exp(-z/H)
 Boundary_value = Fields.Field(
@@ -340,11 +330,7 @@ Boundary_value = Fields.Field(
     axes(p_bottom),
 )
 
-CA.field_shiftface_down!(ᶠp, ᶠp_m1, Boundary_value)
-
-# buoyancy frequency at cell faces
-ᶠN = similar(ᶠz)
-ᶠN .= ᶠinterp.(ᶜN) # alternatively, can be computed from ᶠT and ᶠdTdz
+CA.field_shiftface_down!(topo_ᶠp, topo_ᶠp₋₁, Boundary_value)
 
 # compute base flux at k_pbl
 CA.calc_base_flux!(
@@ -371,7 +357,7 @@ CA.calc_base_flux!(
     u_phy,
     v_phy,
     ᶜz,
-    ᶜN,
+    topo_ᶜN,
 )
 
 CA.calc_saturation_profile!(
@@ -396,7 +382,7 @@ CA.calc_saturation_profile!(
     u_phy,
     v_phy,
     ᶜp,
-    ᶜN,
+    topo_ᶜN,
     ᶜz,
 )
 
@@ -434,10 +420,10 @@ CA.calc_nonpropagating_forcing!(
     topo_ᶜweights,
     topo_ᶜdiff,
     topo_ᶜwtsum,
-    # dycore
-    ᶠp,
-    ᶠp_m1,
-    ᶠN,
+    # dycore or dycore-derived inputs
+    topo_ᶠp,
+    topo_ᶠp₋₁,
+    topo_ᶠN,
     ᶠz,
     ᶠdz,
     grav,
