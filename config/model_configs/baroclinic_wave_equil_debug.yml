@@ -1,0 +1,23 @@
+dt: "400secs"
+deep_atmosphere: true
+dz_bottom: 30.0
+z_elem: 30
+t_end: "70days"
+# CASE (Initial Condition)
+initial_condition: "MoistBaroclinicWave"
+# Moisture Info
+precip_model: "0M"
+moist: "equil"
+# Surface Fluxes and Diffusion
+disable_surface_flux_tendency: false
+surface_setup: "DefaultMoninObukhov"
+vert_diff: "DecayWithHeightDiffusion"
+implicit_diffusion: true
+# Implicit Solver Params (Diffusion)
+approximate_linear_solve_iters: 5
+# Verbose Diagnostics (instantaneous information in addition to default outputs) 
+diagnostics:
+  - short_name: [ts, ta, thetaa, ha, pfull, rhoa, ua, va, wa, hur, hus, cl, clw, cli, hussfc]
+    period: 30days
+# Explicit specification of Float type to avoid ambiguity
+FLOAT_TYPE: Float32

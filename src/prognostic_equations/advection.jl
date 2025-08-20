@@ -187,6 +187,10 @@ Modifies `Yₜ.c` (various tracers, `ρe_tot`, `ρq_tot`, `uₕ`), `Yₜ.f.u₃`
 `Yₜ.f.sgsʲs` (updraft `u₃`), and `Yₜ.c.sgs⁰.ρatke` as applicable.
 """
 NVTX.@annotate function explicit_vertical_advection_tendency!(Yₜ, Y, p, t)
+
+    Y_tmp = deepcopy(Y)
+    p_tmp = deepcopy(p)
+
     (; turbconv_model) = p.atmos
     n = n_prognostic_mass_flux_subdomains(turbconv_model)
     advect_tke = use_prognostic_tke(turbconv_model)
@@ -199,6 +203,14 @@ NVTX.@annotate function explicit_vertical_advection_tendency!(Yₜ, Y, p, t)
     (; ᶜuʲs, ᶜKʲs, ᶠKᵥʲs) = n > 0 ? p.precomputed : all_nothing
     (; energy_upwinding, tracer_upwinding) = p.atmos.numerics
     thermo_params = CAP.thermodynamics_params(p.params)
+
+    # Y_tmp = deepcopy(Y)
+    # @. Y_tmp = Y_tmp + p.dt * Yₜ
+    # set_precomputed_quantities!(Y_tmp, p_tmp, t + p.dt)
+    # ᶜts = p_tmp.precomputed.ᶜts
+    # pex = extrema(diff(parent(ClimaCore.to_cpu(ᶜts.p)), dims=1))
+    # @info pex
+    # @Main.infiltrate any(pex .> 0.0)
 
     ᶠu³⁰ =
         advect_tke ?
@@ -230,6 +242,14 @@ NVTX.@annotate function explicit_vertical_advection_tendency!(Yₜ, Y, p, t)
     ᶜω³ = p.scratch.ᶜtemp_CT3
     ᶠω¹² = p.scratch.ᶠtemp_CT12
     ᶠω¹²ʲs = p.scratch.ᶠtemp_CT12ʲs
+
+    # Y_tmp = deepcopy(Y)
+    # @. Y_tmp = Y_tmp + p.dt * Yₜ
+    # set_precomputed_quantities!(Y_tmp, p_tmp, t + p.dt)
+    # ᶜts = p_tmp.precomputed.ᶜts
+    # pex = extrema(diff(parent(ClimaCore.to_cpu(ᶜts.p)), dims=1))
+    # # @info pex
+    # # @Main.infiltrate any(pex .> 0.0)
 
     if point_type <: Geometry.Abstract3DPoint
         @. ᶜω³ = curlₕ(Y.c.uₕ)
@@ -272,12 +292,28 @@ NVTX.@annotate function explicit_vertical_advection_tendency!(Yₜ, Y, p, t)
         @. Yₜ.c.ρe_tot += vtt - vtt_central
     end
 
+    Y_tmp = deepcopy(Y)
+    @. Y_tmp = Y_tmp + p.dt * Yₜ
+    set_precomputed_quantities!(Y_tmp, p_tmp, t + p.dt)
+    ᶜts = p_tmp.precomputed.ᶜts
+    pex = extrema(diff(parent(ClimaCore.to_cpu(ᶜts.p)), dims=1))
+    # @info pex
+    # @Main.infiltrate any(pex .> 0.0)
+
     if !(p.atmos.moisture_model isa DryModel) && tracer_upwinding != Val(:none)
         ᶜq_tot = @. lazy(specific(Y.c.ρq_tot, Y.c.ρ))
         vtt = vertical_transport(ᶜρ, ᶠu³, ᶜq_tot, float(dt), tracer_upwinding)
         vtt_central = vertical_transport(ᶜρ, ᶠu³, ᶜq_tot, float(dt), Val(:none))
         @. Yₜ.c.ρq_tot += vtt - vtt_central
     end
+
+    # Y_tmp = deepcopy(Y)
+    # @. Y_tmp = Y_tmp + p.dt * Yₜ
+    # set_precomputed_quantities!(Y_tmp, p_tmp, t + p.dt)
+    # ᶜts = p_tmp.precomputed.ᶜts
+    # pex = extrema(diff(parent(ClimaCore.to_cpu(ᶜts.p)), dims=1))
+    # # @info pex
+    # # @Main.infiltrate any(pex .> 0.0)
 
     if isnothing(ᶠf¹²)
         # shallow atmosphere
@@ -303,11 +339,27 @@ NVTX.@annotate function explicit_vertical_advection_tendency!(Yₜ, Y, p, t)
         end
     end
 
+    # Y_tmp = deepcopy(Y)
+    # @. Y_tmp = Y_tmp + p.dt * Yₜ
+    # set_precomputed_quantities!(Y_tmp, p_tmp, t + p.dt)
+    # ᶜts = p_tmp.precomputed.ᶜts
+    # pex = extrema(diff(parent(ClimaCore.to_cpu(ᶜts.p)), dims=1))
+    # # @info pex
+    # # @Main.infiltrate any(pex .> 0.0)
+
     if use_prognostic_tke(turbconv_model) # advect_tke triggers allocations
         @. ᶜa_scalar = ᶜtke⁰ * draft_area(ᶜρa⁰, ᶜρ⁰)
         vtt = vertical_transport(ᶜρ⁰, ᶠu³⁰, ᶜa_scalar, dt, edmfx_upwinding)
         @. Yₜ.c.sgs⁰.ρatke += vtt
     end
+
+    # Y_tmp = deepcopy(Y)
+    # @. Y_tmp = Y_tmp + p.dt * Yₜ
+    # set_precomputed_quantities!(Y_tmp, p_tmp, t + p.dt)
+    # ᶜts = p_tmp.precomputed.ᶜts
+    # pex = extrema(diff(parent(ClimaCore.to_cpu(ᶜts.p)), dims=1))
+    # # @info pex
+    # # @Main.infiltrate any(pex .> 0.0)
 end
 
 """

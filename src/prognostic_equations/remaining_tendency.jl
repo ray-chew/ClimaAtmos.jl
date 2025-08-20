@@ -64,13 +64,63 @@ Returns:
 NVTX.@annotate function remaining_tendency!(Yₜ, Yₜ_lim, Y, p, t)
     Yₜ_lim .= zero(eltype(Yₜ_lim))
     Yₜ .= zero(eltype(Yₜ))
+
+    Y_tmp = deepcopy(Y)
+    p_tmp = deepcopy(p)
+    @. Y_tmp = Y_tmp + p.dt * Yₜ
+    set_precomputed_quantities!(Y_tmp, p_tmp, t + p.dt)
+    ᶜts = p_tmp.precomputed.ᶜts
+    p_1 = Fields.level(ᶜts.p,1); p_2 = Fields.level(ᶜts.p,2); p_diff = Fields.field_values(p_2) .- Fields.field_values(p_1)
+    pex = extrema(ClimaCore.to_cpu(p_diff))
+    @info "$pex before horizontal_tracer_advection_tendency!"
+    # @Main.infiltrate any(pex .> 0.0)
+
     horizontal_tracer_advection_tendency!(Yₜ_lim, Y, p, t)
     fill_with_nans!(p)  # TODO: would be better to limit this to debug mode (e.g., if p.debug_mode...)
     horizontal_dynamics_tendency!(Yₜ, Y, p, t)
     hyperdiffusion_tendency!(Yₜ, Yₜ_lim, Y, p, t)
+
+    Y_tmp = deepcopy(Y)
+    @. Y_tmp = Y_tmp + p.dt * Yₜ
+    set_precomputed_quantities!(Y_tmp, p_tmp, t + p.dt)
+    ᶜts = p_tmp.precomputed.ᶜts
+    p_1 = Fields.level(ᶜts.p,1); p_2 = Fields.level(ᶜts.p,2); p_diff = Fields.field_values(p_2) .- Fields.field_values(p_1)
+    pex = extrema(ClimaCore.to_cpu(p_diff))
+    @info "$pex before explicit_vertical_advection_tendency!"
+    # @Main.infiltrate any(pex .> 0.0)
+
     explicit_vertical_advection_tendency!(Yₜ, Y, p, t)
+
+    Y_tmp = deepcopy(Y)
+    @. Y_tmp = Y_tmp + p.dt * Yₜ
+    set_precomputed_quantities!(Y_tmp, p_tmp, t + p.dt)
+    ᶜts = p_tmp.precomputed.ᶜts
+    p_1 = Fields.level(ᶜts.p,1); p_2 = Fields.level(ᶜts.p,2); p_diff = Fields.field_values(p_2) .- Fields.field_values(p_1)
+    pex = extrema(ClimaCore.to_cpu(p_diff))
+    @info "$pex before vertical_advection_of_water_tendency!"
+    # @Main.infiltrate any(pex .> 0.0)
+
     vertical_advection_of_water_tendency!(Yₜ, Y, p, t)
+
+    Y_tmp = deepcopy(Y)
+    @. Y_tmp = Y_tmp + p.dt * Yₜ
+    set_precomputed_quantities!(Y_tmp, p_tmp, t + p.dt)
+    ᶜts = p_tmp.precomputed.ᶜts
+    p_1 = Fields.level(ᶜts.p,1); p_2 = Fields.level(ᶜts.p,2); p_diff = Fields.field_values(p_2) .- Fields.field_values(p_1)
+    pex = extrema(ClimaCore.to_cpu(p_diff))
+    @info "$pex before additional_tendency!"
+    # @Main.infiltrate any(pex .> 0.0)
+
     additional_tendency!(Yₜ, Y, p, t)
+
+    Y_tmp = deepcopy(Y)
+    @. Y_tmp = Y_tmp + p.dt * Yₜ
+    set_precomputed_quantities!(Y_tmp, p_tmp, t + p.dt)
+    ᶜts = p_tmp.precomputed.ᶜts
+    p_1 = Fields.level(ᶜts.p,1); p_2 = Fields.level(ᶜts.p,2); p_diff = Fields.field_values(p_2) .- Fields.field_values(p_1)
+    pex = extrema(ClimaCore.to_cpu(p_diff))
+    @info "$pex after additional_tendency!"
+    # @Main.infiltrate any(pex .> 0.0)
     return Yₜ
 end
 
@@ -216,6 +266,8 @@ NVTX.@annotate function additional_tendency!(Yₜ, Y, p, t)
     lsa_args = (ᶜρ, thermo_params, ᶜts, t, ls_adv)
     bc_lsa_tend_ρe_tot = large_scale_advection_tendency_ρe_tot(lsa_args...)
 
+#######PH
+
     # TODO: fuse, once we fix
     #       https://github.com/CliMA/ClimaCore.jl/issues/2165
     @. Yₜ.c.uₕ += vst_uₕ
@@ -267,6 +319,8 @@ NVTX.@annotate function additional_tendency!(Yₜ, Y, p, t)
         )
     end
 
+#######PH
+
     if p.atmos.diff_mode == Explicit()
         vertical_diffusion_boundary_layer_tendency!(
             Yₜ,
@@ -278,7 +332,10 @@ NVTX.@annotate function additional_tendency!(Yₜ, Y, p, t)
         edmfx_sgs_diffusive_flux_tendency!(Yₜ, Y, p, t, p.atmos.turbconv_model)
     end
 
+#######PH
+    
     surface_flux_tendency!(Yₜ, Y, p, t)
+    
 
     radiation_tendency!(Yₜ, Y, p, t, p.atmos.radiation_mode)
     if p.atmos.sgs_entr_detr_mode == Explicit()
