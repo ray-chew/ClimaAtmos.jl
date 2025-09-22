@@ -271,14 +271,19 @@ end
 # dss_hyperdiffusion_tendency_pairs
 NVTX.@annotate function prep_tracer_hyperdiffusion_tendency!(Yₜ, Y, p, t)
     (; hyperdiff, turbconv_model) = p.atmos
+    (; q_tot_ref) = p.core
     isnothing(hyperdiff) && return nothing
 
     (; ᶜ∇²specific_tracers) = p.hyperdiff
 
     # TODO: Fix RecursiveApply bug in gradₕ to fuse this operation.
     # ᶜ∇²specific_tracers .= wdivₕ.(gradₕ.(ᶜspecific_gs_tracers(Y)))
-    foreach_gs_tracer(Y, ᶜ∇²specific_tracers) do ᶜρχ, ᶜ∇²χ, _
-        @. ᶜ∇²χ = wdivₕ(gradₕ(specific(ᶜρχ, Y.c.ρ)))
+    foreach_gs_tracer(Y, ᶜ∇²specific_tracers) do ᶜρχ, ᶜ∇²χ, ρχ_name
+        if ρχ_name == @name(ρq_tot)
+            @. ᶜ∇²χ = wdivₕ(gradₕ(specific(ᶜρχ, Y.c.ρ) - q_tot_ref))
+        else
+            @. ᶜ∇²χ = wdivₕ(gradₕ(specific(ᶜρχ, Y.c.ρ)))
+        end
     end
 
     if turbconv_model isa PrognosticEDMFX

@@ -35,10 +35,11 @@ Modifies `Yₜ.c.ρ`, `Yₜ.c.ρe_tot`, `Yₜ.c.uₕ`, and EDMFX-related fields 
 """
 NVTX.@annotate function horizontal_dynamics_tendency!(Yₜ, Y, p, t)
     n = n_mass_flux_subdomains(p.atmos.turbconv_model)
-    (; ᶜΦ) = p.core
+    (; ᶜΦ, T_ref) = p.core
     (; ᶜu, ᶜK, ᶜp, ᶜts) = p.precomputed
     (; params) = p
     thermo_params = CAP.thermodynamics_params(params)
+    cp_d = CAP.cp_d(params)
 
     if p.atmos.turbconv_model isa PrognosticEDMFX
         (; ᶜuʲs) = p.precomputed
@@ -81,8 +82,50 @@ NVTX.@annotate function horizontal_dynamics_tendency!(Yₜ, Y, p, t)
         @. Yₜ.c.sgs⁰.ρatke -= wdivₕ(Y.c.sgs⁰.ρatke * ᶜu_for_tke_advection)
 
     end
+    
+    # Following Herrington et al (2022a.)
+    # Rewrite ∇Φ + ∇ₕ(p)/ρ  = ∇Φ + cp_d * θᵥ * ∇Π 
+    # where Π = (p/p_0)^κ. 
+    θ_v = p.scratch.ᶜtemp_scalar_2
+    Π = p.scratch.ᶜtemp_scalar_3
+    @. θ_v = TD.virtual_pottemp.(thermo_params, ᶜts)
+    @. Π = TD.exner_given_pressure.(thermo_params, 
+                                      TD.air_pressure.(thermo_params, ᶜts))
 
-    @. Yₜ.c.uₕ -= C12(gradₕ(ᶜp) / Y.c.ρ + gradₕ(ᶜK + ᶜΦ))
+    # Following Herrington et al (2022a.)
+    # Rewrite ∇Φ + ∇ₕ(p)/ρ  = ∇Φ + cp_d * θᵥ * ∇Π 
+    # where Π = (p/p_0)^κ. )
+    cp_d = CAP.cp_d(params)
+    R_d = CAP.R_d(params)
+    g = CAP.grav(params)
+    p0 = CAP.p_ref_theta(params)
+    FT = eltype(g)
+    Γ = FT(6.5e-3)  # lapse rate in K/m
+    # T_ref = thermo_params.T_surf_ref
+
+    Ta = TD.air_temperature.(thermo_params, ᶜts)
+    pa = TD.air_pressure.(thermo_params, ᶜts)
+    ρa = TD.air_density.(thermo_params, ᶜts)
+    qa = TD.PhasePartition.(thermo_params, ᶜts)
+    R_m = TD.gas_constant_air.(thermo_params, qa)
+    θ_v = p.scratch.ᶜtemp_scalar_2
+    Π = p.scratch.ᶜtemp_scalar_3
+
+    # @. θ_v = R_m / R_d *
+        # TD.dry_pottemp(thermo_params, Ta, ρa)
+    @. θ_v = R_m / R_d * ( Ta / (pa/p0)^(R_d/cp_d) )
+    @. Π = TD.exner_given_pressure.(thermo_params,
+        TD.air_pressure.(thermo_params, ᶜts))
+
+    # T_0 = T_ref - T_1
+    T_0 = thermo_params.T_0#T_ref - ( Γ * T_ref * cp_d / g )
+    
+    θ_vr = @. lazy(T_0 / Π)
+    Φ_r = @. lazy(-cp_d * T_0 * log(Π))
+
+    @. Yₜ.c.uₕ -=
+        C12(gradₕ(ᶜK)) +
+        C12(gradₕ(ᶜΦ - Φ_r) + cp_d * (θ_v - θ_vr) * gradₕ(Π))
     # Without the C12(), the right-hand side would be a C1 or C2 in 2D space.
     return nothing
 end
