@@ -478,13 +478,15 @@ function update_jacobian!(alg::ManualSparseJacobian, cache, Y, p, dtγ, t)
 
     Π = @. lazy(TD.exner_given_pressure(thermo_params,
         TD.air_pressure(thermo_params, ᶜts)))
-    # we hardcode these for now; [K]
-    T_min = FT(210.0) 
-    T_sfc = FT(288.0)
-    s = FT(7.0)
-    T_r = @. lazy(T_min + (T_sfc - T_min) * Π^(s))
-    θ_vr = p.scratch.ᶜtemp_scalar
-    @. θ_vr = T_r / Π
+    # # we hardcode these for now; [K]
+    # T_min = FT(210.0) 
+    # T_sfc = FT(288.0)
+    # s = FT(7.0)
+    # T_r = @. lazy(T_min + (T_sfc - T_min) * Π^(s))
+    # θ_vr = p.scratch.ᶜtemp_scalar
+    # θ_v = @. lazy(TD.virtual_pottemp(thermo_params, ᶜts))
+
+    # @. θ_vr = T_r / Π
     @. ∂ᶠu₃_err_∂ᶜρ =
         dtγ * (
             ᶠp_grad_matrix ⋅
