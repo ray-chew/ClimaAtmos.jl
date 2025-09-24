@@ -251,29 +251,36 @@ function implicit_vertical_advection_tendency!(Yₜ, Y, p, t)
     R_d = CAP.R_d(params)
     g = CAP.grav(params)
     p0 = CAP.p_ref_theta(params)
-    FT = eltype(g)
-    Γ = FT(6.5e-3)  # lapse rate in K/m
+    FT = eltype(cp_d)
     # T_ref = thermo_params.T_surf_ref
 
     Ta = TD.air_temperature.(thermo_params, ᶜts)
     pa = TD.air_pressure.(thermo_params, ᶜts)
-    ρa = TD.air_density.(thermo_params, ᶜts)
     qa = TD.PhasePartition.(thermo_params, ᶜts)
     R_m = TD.gas_constant_air.(thermo_params, qa)
+
     θ_v = p.scratch.ᶜtemp_scalar_2
     Π = p.scratch.ᶜtemp_scalar_3
-
-    # @. θ_v = R_m / R_d *
-    #         TD.dry_pottemp(thermo_params, Ta, ρa)
     @. θ_v = R_m / R_d * ( Ta / (pa/p0)^(R_d/cp_d) )
     @. Π = TD.exner_given_pressure.(thermo_params,
         TD.air_pressure.(thermo_params, ᶜts))
 
     # T_0 = T_ref - T_1
-    T_0 = thermo_params.T_0#T_ref - ( Γ * T_ref * cp_d / g )
+    # T_0 = thermo_params.T_0#T_ref - ( Γ * T_ref * cp_d / g )
+
+    # we hardcode these for now; [K]
+    T_min = FT(210.0) 
+    T_sfc = FT(288.0)
+    s = FT(7.0)
+    T_r = @. lazy(T_min + (T_sfc - T_min) * Π^(s))
+
+    θ_vr = p.scratch.ᶜtemp_scalar_4
+    Φ_r = p.scratch.ᶜtemp_scalar_5
+    @. θ_vr = T_r / Π
+    @. Φ_r  = -cp_d * (T_min * log(Π) + (T_sfc - T_min)/(s) * (Π^(s) - 1))
     
-    θ_vr = @. lazy(T_0 / Π)
-    Φ_r = @. lazy(-cp_d * T_0 * log(Π))
+    # θ_vr = @. lazy(T_0 / Π)
+    # Φ_r = @. lazy(-cp_d * T_0 * log(Π))
 
     @. Yₜ.f.u₃ -=
         ᶠgradᵥ_ᶜΦ - ᶠgradᵥ(Φ_r) +

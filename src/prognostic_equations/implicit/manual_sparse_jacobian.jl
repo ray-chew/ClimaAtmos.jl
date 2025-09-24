@@ -462,15 +462,34 @@ function update_jacobian!(alg::ManualSparseJacobian, cache, Y, p, dtγ, t)
 
     ∂ᶠu₃_err_∂ᶜρ = matrix[@name(f.u₃), @name(c.ρ)]
     ∂ᶠu₃_err_∂ᶜρe_tot = matrix[@name(f.u₃), @name(c.ρe_tot)]
+
     thermo_params = CAP.thermodynamics_params(params)
-    θ_v = @. lazy(TD.virtual_pottemp(thermo_params, ᶜts))
+
+    cp_d = CAP.cp_d(params)
+    R_d = CAP.R_d(params)
+    p0 = CAP.p_ref_theta(params)
+
+    Ta = TD.air_temperature.(thermo_params, ᶜts)
+    pa = TD.air_pressure.(thermo_params, ᶜts)
+    qa = TD.PhasePartition.(thermo_params, ᶜts)
+    R_m = TD.gas_constant_air.(thermo_params, qa)
+
+    θ_v = @. lazy(R_m / R_d * ( Ta / (pa/p0)^(R_d/cp_d) ))
+
     Π = @. lazy(TD.exner_given_pressure(thermo_params,
         TD.air_pressure(thermo_params, ᶜts)))
+    # we hardcode these for now; [K]
+    T_min = FT(210.0) 
+    T_sfc = FT(288.0)
+    s = FT(7.0)
+    T_r = @. lazy(T_min + (T_sfc - T_min) * Π^(s))
+    θ_vr = p.scratch.ᶜtemp_scalar
+    @. θ_vr = T_r / Π
     @. ∂ᶠu₃_err_∂ᶜρ =
         dtγ * (
             ᶠp_grad_matrix ⋅
             DiagonalMatrixRow(ᶜkappa_m * (T_0 * cp_d - ᶜK - ᶜΦ)) +
-            DiagonalMatrixRow(cp_d * ᶠinterp(θ_v) * ᶠgradᵥ(Π) / ᶠinterp(ᶜρ)) ⋅
+            DiagonalMatrixRow(cp_d * ᶠinterp(θ_v - θ_vr) * ᶠgradᵥ(Π) / ᶠinterp(ᶜρ)) ⋅
             ᶠinterp_matrix()
         )
     @. ∂ᶠu₃_err_∂ᶜρe_tot = dtγ * ᶠp_grad_matrix ⋅ DiagonalMatrixRow(ᶜkappa_m)
