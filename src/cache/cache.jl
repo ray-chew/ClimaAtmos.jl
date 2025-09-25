@@ -128,7 +128,7 @@ function build_cache(
 
     sfc_local_geometry =
         Fields.level(Fields.local_geometry_field(Y.f), Fields.half)
-        core = (
+    core = (
         ᶜΦ,
         ᶠgradᵥ_ᶜΦ = ᶠgradᵥ.(ᶜΦ),
         ᶜgradᵥ_ᶠΦ = ᶜgradᵥ.(ᶠΦ),
@@ -171,7 +171,10 @@ function build_cache(
     thermo_params = CAP.thermodynamics_params(params)
 
     # Reference State
-    Π = @. TD.exner_given_pressure(thermo_params, TD.air_pressure(thermo_params, precomputed.ᶜts))
+    Π = @. TD.exner_given_pressure(
+        thermo_params,
+        TD.air_pressure(thermo_params, precomputed.ᶜts),
+    )
     temp_profile = @. TD.TemperatureProfiles.ReferenceTemperatureProfile(Π, thermo_params)
 
     T_0 = CAP.T_0(params)
@@ -180,7 +183,7 @@ function build_cache(
     rel_hum_ref = @. FT(0.5) * Π
 
     # @Main.infiltrate
-    
+
     @. T_ref = temp_profile
     @. p_ref = TD.air_pressure(thermo_params, precomputed.ᶜts)
     @. q_tot_ref =

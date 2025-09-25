@@ -82,14 +82,14 @@ NVTX.@annotate function horizontal_dynamics_tendency!(Yₜ, Y, p, t)
         @. Yₜ.c.sgs⁰.ρatke -= wdivₕ(Y.c.sgs⁰.ρatke * ᶜu_for_tke_advection)
 
     end
-    
+
     # Following Herrington et al (2022a.)
     θ_v = p.scratch.ᶜtemp_scalar
     hardcoded_θ_v!(θ_v, params, ᶜts)
 
     θ_vr = p.scratch.ᶜtemp_scalar_2
     Π = p.scratch.ᶜtemp_scalar_3
-    Φ_r  = p.scratch.ᶜtemp_scalar_4
+    Φ_r = p.scratch.ᶜtemp_scalar_4
     compute_Φ_r_θ_vr!(Π, Φ_r, θ_vr, params, ᶜts)
 
     @. Yₜ.c.uₕ -=

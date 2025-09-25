@@ -474,7 +474,7 @@ function update_jacobian!(alg::ManualSparseJacobian, cache, Y, p, dtγ, t)
     qa = TD.PhasePartition.(thermo_params, ᶜts)
     R_m = TD.gas_constant_air.(thermo_params, qa)
 
-    θ_v = @. lazy(R_m / R_d * ( Ta / (pa/p0)^(R_d/cp_d) ))
+    θ_v = @. lazy(R_m / R_d * (Ta / (pa / p0)^(R_d / cp_d)))
 
     Π = @. lazy(TD.exner_given_pressure(thermo_params,
         TD.air_pressure(thermo_params, ᶜts)))
