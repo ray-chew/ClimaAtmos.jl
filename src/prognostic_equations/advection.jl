@@ -35,7 +35,7 @@ Modifies `Yₜ.c.ρ`, `Yₜ.c.ρe_tot`, `Yₜ.c.uₕ`, and EDMFX-related fields 
 """
 NVTX.@annotate function horizontal_dynamics_tendency!(Yₜ, Y, p, t)
     n = n_mass_flux_subdomains(p.atmos.turbconv_model)
-    (; ᶜΦ, T_ref) = p.core
+    (; ᶜΦ) = p.core
     (; ᶜu, ᶜK, ᶜp, ᶜts) = p.precomputed
     (; params) = p
     thermo_params = CAP.thermodynamics_params(params)
@@ -84,53 +84,13 @@ NVTX.@annotate function horizontal_dynamics_tendency!(Yₜ, Y, p, t)
     end
     
     # Following Herrington et al (2022a.)
-    # Rewrite ∇Φ + ∇ₕ(p)/ρ  = ∇Φ + cp_d * θᵥ * ∇Π 
-    # where Π = (p/p_0)^κ. 
-    # θ_v = p.scratch.ᶜtemp_scalar_2
-    # Π = p.scratch.ᶜtemp_scalar_3
-    # @. θ_v = TD.virtual_pottemp.(thermo_params, ᶜts)
-    # @. Π = TD.exner_given_pressure.(thermo_params, 
-    #                                   TD.air_pressure.(thermo_params, ᶜts))
+    θ_v = p.scratch.ᶜtemp_scalar
+    hardcoded_θ_v!(θ_v, params, ᶜts)
 
-    # Following Herrington et al (2022a.)
-    # Rewrite ∇Φ + ∇ₕ(p)/ρ  = ∇Φ + cp_d * θᵥ * ∇Π 
-    # where Π = (p/p_0)^κ. )
-    cp_d = CAP.cp_d(params)
-    R_d = CAP.R_d(params)
-    p0 = CAP.p_ref_theta(params)
-    FT = eltype(cp_d)
-    Γ = FT(6.5e-3)  # lapse rate in K/m
-
-    Ta = TD.air_temperature.(thermo_params, ᶜts)
-    pa = TD.air_pressure.(thermo_params, ᶜts)
-    ρa = TD.air_density.(thermo_params, ᶜts)
-    qa = TD.PhasePartition.(thermo_params, ᶜts)
-    R_m = TD.gas_constant_air.(thermo_params, qa)
-    θ_v = p.scratch.ᶜtemp_scalar_2
+    θ_vr = p.scratch.ᶜtemp_scalar_2
     Π = p.scratch.ᶜtemp_scalar_3
-    # @. θ_v = R_m / R_d *
-    #         TD.dry_pottemp(thermo_params, Ta, ρa)
-    @. θ_v = R_m / R_d * ( Ta / (pa/p0)^(R_d/cp_d) )
-    @. Π = TD.exner_given_pressure.(thermo_params,
-        TD.air_pressure.(thermo_params, ᶜts))
-
-    # T_0 = T_ref - T_1
-    # T_0 = thermo_params.T_0#T_ref - ( Γ * T_ref * cp_d / g )
-
-    # @Main.infiltrate
-    # we hardcode these for now; [K]
-    T_min = FT(210.0) 
-    T_sfc = FT(288.0)
-    s = FT(7.0)
-    T_r = @. lazy(T_min + (T_sfc - T_min) * Π^(s))
-
-    θ_vr = p.scratch.ᶜtemp_scalar_4
-    Φ_r = p.scratch.ᶜtemp_scalar_5
-    @. θ_vr = T_r / Π
-    @. Φ_r  = -cp_d * (T_min * log(Π) + (T_sfc - T_min)/(s) * (Π^(s) - 1))
-    
-    # θ_vr = @. lazy(T_0 / Π)
-    # Φ_r = @. lazy(-cp_d * T_0 * log(Π))
+    Φ_r  = p.scratch.ᶜtemp_scalar_4
+    compute_Φ_r_θ_vr!(Π, Φ_r, θ_vr, params, ᶜts)
 
     @. Yₜ.c.uₕ -=
         C12(gradₕ(ᶜK)) +

@@ -544,3 +544,50 @@ function clima_to_era5_name_dict()
         "hfss" => "sshf",
     )
 end
+
+"""
+    hardcoded_θ_v(Π, params)
+
+"""
+function hardcoded_θ_v!(θ_v, params, ᶜts, checks=nothing)
+    thermo_params = CAP.thermodynamics_params(params)
+    cp_d = CAP.cp_d(params)
+    R_d = CAP.R_d(params)
+    p0 = CAP.p_ref_theta(params)
+
+    Ta = TD.air_temperature.(thermo_params, ᶜts)
+    pa = TD.air_pressure.(thermo_params, ᶜts)
+    qa = TD.PhasePartition.(thermo_params, ᶜts)
+    R_m = TD.gas_constant_air.(thermo_params, qa)
+
+    @. θ_v = R_m / R_d * ( Ta / (pa/p0)^(R_d/cp_d) )
+
+    if !isnothing(checks)
+        @assert all(θ_v .== R_m / R_d * TD.dry_pottemp(thermo_params, Ta, ρa)) "Hardcoded virtual potential temperature does not match the one computed from dry_pottemp"
+    end
+    # return θ_v
+end
+
+"""
+    compute_Φ_r_θ_vr(params, thermo_params)
+
+    Compute the reference geopotential and virtual potential temperature profiles to be used in the pressure gradient update.
+"""
+function compute_Φ_r_θ_vr!(Π, Φ_r, θ_vr, params, ᶜts)
+    thermo_params = CAP.thermodynamics_params(params)
+
+    @. Π = (TD.exner_given_pressure(thermo_params,
+        TD.air_pressure(thermo_params, ᶜts)))
+
+    cp_d = CAP.cp_d(params)
+    T_r = @. lazy( TD.TemperatureProfiles.ReferenceTemperatureProfile(Π, thermo_params) )
+    @. θ_vr = T_r / Π
+
+    T_min = thermo_params.T_min_ref
+    T_sfc = thermo_params.T_surf_ref
+    s_ref = thermo_params.s_ref
+
+    @. Φ_r  = -cp_d * (T_min * log(Π) + (T_sfc - T_min)/(s_ref) * (Π^(s_ref) - 1))
+
+    return Π
+end

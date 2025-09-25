@@ -128,44 +128,7 @@ function build_cache(
 
     sfc_local_geometry =
         Fields.level(Fields.local_geometry_field(Y.f), Fields.half)
-
-    # Reference enthalpy for hyperdiffusion computation
-    ᶜz = Fields.coordinate_field(Y.c).z
-    T_ref = similar(ᶜz)
-    p_ref = similar(ᶜz)
-    q_tot_ref = similar(ᶜz)
-    cv_m = similar(ᶜz)
-    thermo_params = CAP.thermodynamics_params(params)
-    decay_scale_height = FT(8000)
-
-    # Reference State
-    temp_profile = TD.TemperatureProfiles.DecayingTemperatureProfile{FT}(
-        thermo_params,
-        FT(300),  # surface temperature
-        FT(220),  # top temperature
-        decay_scale_height,  # decay height scale
-    )
-
-    rel_hum_ref =
-        atmos.moisture_model isa DryModel ? FT(0) :
-        @. FT(0.5) * exp(- ᶜz / decay_scale_height)
-
-    T_0 = CAP.T_0(params)
-    grav = CAP.grav(params)
-    @. T_ref = first(temp_profile(thermo_params, ᶜz))
-    @. p_ref = last(temp_profile(thermo_params, ᶜz))
-    @. q_tot_ref =
-        TD.q_vap_from_RH_liquid(thermo_params, p_ref, T_ref, rel_hum_ref)
-    @. cv_m = TD.cv_m(thermo_params, TD.PhasePartition(q_tot_ref, FT(0), FT(0)))
-
-    ᶜh_ref = @. TD.total_specific_enthalpy(
-        thermo_params,
-        cv_m * (T_ref - T_0) + grav * ᶜz,
-        T_ref,
-        TD.PhasePartition(q_tot_ref, FT(0), FT(0)),
-    )
-
-    core = (
+        core = (
         ᶜΦ,
         ᶠgradᵥ_ᶜΦ = ᶠgradᵥ.(ᶜΦ),
         ᶜgradᵥ_ᶠΦ = ᶜgradᵥ.(ᶠΦ),
@@ -175,9 +138,6 @@ function build_cache(
         surface_ct3_unit = CT3.(
             unit_basis_vector_data.(CT3, sfc_local_geometry)
         ),
-        ᶜh_ref,
-        T_ref,
-        q_tot_ref,
     )
     external_forcing = external_forcing_cache(Y, atmos, params, start_date)
     sfc_setup = surface_setup(params)
@@ -201,6 +161,40 @@ function build_cache(
         SurfaceConditions.set_dummy_surface_conditions!(precomputing_arguments)
 
     set_precomputed_quantities!(Y, precomputing_arguments, FT(0))
+
+    # Reference enthalpy for hyperdiffusion computation
+    ᶜz = Fields.coordinate_field(Y.c).z
+    T_ref = similar(ᶜz)
+    p_ref = similar(ᶜz)
+    q_tot_ref = similar(ᶜz)
+    cv_m = similar(ᶜz)
+    thermo_params = CAP.thermodynamics_params(params)
+
+    # Reference State
+    Π = @. TD.exner_given_pressure(thermo_params, TD.air_pressure(thermo_params, precomputed.ᶜts))
+    temp_profile = @. TD.TemperatureProfiles.ReferenceTemperatureProfile(Π, thermo_params)
+
+    T_0 = CAP.T_0(params)
+    grav = CAP.grav(params)
+
+    rel_hum_ref = @. FT(0.5) * Π
+
+    # @Main.infiltrate
+    
+    @. T_ref = temp_profile
+    @. p_ref = TD.air_pressure(thermo_params, precomputed.ᶜts)
+    @. q_tot_ref =
+        TD.q_vap_from_RH_liquid(thermo_params, p_ref, T_ref, rel_hum_ref)
+    @. cv_m = TD.cv_m(thermo_params, TD.PhasePartition(q_tot_ref, FT(0), FT(0)))
+
+    ᶜh_ref = @. TD.total_specific_enthalpy(
+        thermo_params,
+        cv_m * (T_ref - T_0) + grav * ᶜz,
+        T_ref,
+        TD.PhasePartition(q_tot_ref, FT(0), FT(0)),
+    )
+
+    core = merge(core, (; q_tot_ref, ᶜh_ref))
 
     radiation_args =
         atmos.radiation_mode isa RRTMGPI.AbstractRRTMGPMode ?
