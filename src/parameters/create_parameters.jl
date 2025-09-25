@@ -140,6 +140,7 @@ atmos_name_map = (;
     :optics_lookup_temperature_max => :optics_lookup_temperature_max,
     :tracer_hyperdiffusion_factor => :α_hyperdiff_tracer,
     :tracer_vertical_diffusion_factor => :α_vert_diff_tracer,
+    :reference_temperature_transition_exponent => :s_ref,
 )
 
 cloud_parameters(::Type{FT}) where {FT <: AbstractFloat} =

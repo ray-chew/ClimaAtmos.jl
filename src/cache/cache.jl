@@ -162,43 +162,6 @@ function build_cache(
 
     set_precomputed_quantities!(Y, precomputing_arguments, FT(0))
 
-    # Reference enthalpy for hyperdiffusion computation
-    ᶜz = Fields.coordinate_field(Y.c).z
-    T_ref = similar(ᶜz)
-    p_ref = similar(ᶜz)
-    q_tot_ref = similar(ᶜz)
-    cv_m = similar(ᶜz)
-    thermo_params = CAP.thermodynamics_params(params)
-
-    # Reference State
-    Π = @. TD.exner_given_pressure(
-        thermo_params,
-        TD.air_pressure(thermo_params, precomputed.ᶜts),
-    )
-    temp_profile = @. TD.TemperatureProfiles.ReferenceTemperatureProfile(Π, thermo_params)
-
-    T_0 = CAP.T_0(params)
-    grav = CAP.grav(params)
-
-    rel_hum_ref = @. FT(0.5) * Π
-
-    # @Main.infiltrate
-
-    @. T_ref = temp_profile
-    @. p_ref = TD.air_pressure(thermo_params, precomputed.ᶜts)
-    @. q_tot_ref =
-        TD.q_vap_from_RH_liquid(thermo_params, p_ref, T_ref, rel_hum_ref)
-    @. cv_m = TD.cv_m(thermo_params, TD.PhasePartition(q_tot_ref, FT(0), FT(0)))
-
-    ᶜh_ref = @. TD.total_specific_enthalpy(
-        thermo_params,
-        cv_m * (T_ref - T_0) + grav * ᶜz,
-        T_ref,
-        TD.PhasePartition(q_tot_ref, FT(0), FT(0)),
-    )
-
-    core = merge(core, (; q_tot_ref, ᶜh_ref))
-
     radiation_args =
         atmos.radiation_mode isa RRTMGPI.AbstractRRTMGPMode ?
         (

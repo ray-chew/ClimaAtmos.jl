@@ -121,6 +121,8 @@ Base.@kwdef struct ClimaAtmosParameters{
     α_vert_diff_tracer::FT
     # Gryanik b_m coefficient
     coeff_b_m_gryanik::FT
+    # Reference temperature profile exponent
+    s_ref::FT
 end
 
 Base.eltype(::ClimaAtmosParameters{FT}) where {FT} = FT

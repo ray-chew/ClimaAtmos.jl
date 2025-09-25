@@ -565,7 +565,6 @@ function hardcoded_θ_v!(θ_v, params, ᶜts, checks = nothing)
     if !isnothing(checks)
         @assert all(θ_v .== R_m / R_d * TD.dry_pottemp(thermo_params, Ta, ρa)) "Hardcoded virtual potential temperature does not match the one computed from dry_pottemp"
     end
-    # return θ_v
 end
 
 """
@@ -580,14 +579,91 @@ function compute_Φ_r_θ_vr!(Π, Φ_r, θ_vr, params, ᶜts)
         TD.air_pressure(thermo_params, ᶜts)))
 
     cp_d = CAP.cp_d(params)
-    T_r = @. lazy(TD.TemperatureProfiles.ReferenceTemperatureProfile(Π, thermo_params))
+    T_r = ReferenceTemperatureProfile(Π, params)
     @. θ_vr = T_r / Π
 
     T_min = thermo_params.T_min_ref
     T_sfc = thermo_params.T_surf_ref
-    s_ref = thermo_params.s_ref
+    s_ref = CAP.s_ref(params)
 
     @. Φ_r = -cp_d * (T_min * log(Π) + (T_sfc - T_min) / (s_ref) * (Π^(s_ref) - 1))
 
     return Π
+end
+
+
+
+"""
+    ReferenceTemperatureProfile{FT}
+"""
+
+function ReferenceTemperatureProfile(Π, params)
+    thermo_params = CAP.thermodynamics_params(params)
+
+    T_min = thermo_params.T_min_ref
+    T_sfc = thermo_params.T_surf_ref
+    s_ref = CAP.s_ref(params)
+
+    T_r = @. T_min + (T_sfc - T_min) * Π^(s_ref)
+
+    return T_r
+end
+
+"""
+    compute_hyperdiffusion_reference_q_tot(Y, p)
+
+Compute reference state quantities up to and including q_tot_ref.
+"""
+function compute_hyperdiffusion_reference_q_tot!(q_tot_ref, T_ref, p)
+    (; params) = p
+    (; ᶜts) = p.precomputed
+    FT = eltype(q_tot_ref)
+
+    Π = p.scratch.ᶜtemp_scalar
+    rel_hum_ref = p.scratch.ᶜtemp_scalar_2
+    thermo_params = CAP.thermodynamics_params(params)
+
+    @. Π = TD.exner_given_pressure(
+        thermo_params,
+        TD.air_pressure(thermo_params, ᶜts),
+    )
+    @. T_ref = ReferenceTemperatureProfile(Π, params)
+
+    @. rel_hum_ref = FT(0.5) * Π
+
+    p_ref = @. lazy(TD.air_pressure(thermo_params, ᶜts))
+    @. q_tot_ref =
+        TD.q_vap_from_RH_liquid(thermo_params, p_ref, T_ref, rel_hum_ref)
+
+    return (T_ref)
+end
+
+"""
+    compute_hyperdiffusion_reference_h(Y, p, T_ref, p_ref, q_tot_ref, thermo_params)
+
+Compute reference enthalpy ᶜh_ref given the reference state quantities.
+"""
+function compute_hyperdiffusion_reference_h!(ᶜh_ref, Y, p)
+    (; params) = p
+    thermo_params = CAP.thermodynamics_params(params)
+
+    ᶜz = Fields.coordinate_field(Y.c).z
+    cv_m = p.scratch.ᶜtemp_scalar_2
+    q_tot_ref = p.scratch.ᶜtemp_scalar_3
+    T_ref = p.scratch.ᶜtemp_scalar_4
+
+    T_0 = CAP.T_0(params)
+    grav = CAP.grav(params)
+    FT = eltype(ᶜh_ref)
+
+    compute_hyperdiffusion_reference_q_tot!(q_tot_ref, T_ref, p)
+
+    @. cv_m = TD.cv_m(thermo_params, TD.PhasePartition(q_tot_ref, FT(0), FT(0)))
+
+    @. ᶜh_ref = TD.total_specific_enthalpy(
+        thermo_params,
+        cv_m * (T_ref - T_0) + grav * ᶜz,
+        T_ref,
+        TD.PhasePartition(q_tot_ref, FT(0), FT(0)),
+    )
 end

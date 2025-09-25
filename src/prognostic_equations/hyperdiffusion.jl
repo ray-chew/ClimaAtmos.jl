@@ -111,7 +111,6 @@ NVTX.@annotate function prep_hyperdiffusion_tendency!(Yₜ, Y, p, t)
     n = n_mass_flux_subdomains(turbconv_model)
     diffuse_tke = use_prognostic_tke(turbconv_model)
     (; ᶜp) = p.precomputed
-    (; ᶜh_ref) = p.core
     (; ᶜ∇²u, ᶜ∇²specific_energy) = p.hyperdiff
     if turbconv_model isa PrognosticEDMFX
         (; ᶜ∇²uₕʲs, ᶜ∇²uᵥʲs, ᶜ∇²uʲs, ᶜ∇²mseʲs) = p.hyperdiff
@@ -121,6 +120,9 @@ NVTX.@annotate function prep_hyperdiffusion_tendency!(Yₜ, Y, p, t)
     @. ᶜ∇²u =
         C123(wgradₕ(divₕ(p.precomputed.ᶜu))) -
         C123(wcurlₕ(C123(curlₕ(p.precomputed.ᶜu))))
+
+    ᶜh_ref = p.scratch.ᶜtemp_scalar
+    compute_hyperdiffusion_reference_h!(ᶜh_ref, Y, p)
 
     @. ᶜ∇²specific_energy =
         wdivₕ(gradₕ(specific(Y.c.ρe_tot, Y.c.ρ) + ᶜp / Y.c.ρ - ᶜh_ref))
@@ -271,7 +273,6 @@ end
 # dss_hyperdiffusion_tendency_pairs
 NVTX.@annotate function prep_tracer_hyperdiffusion_tendency!(Yₜ, Y, p, t)
     (; hyperdiff, turbconv_model) = p.atmos
-    (; q_tot_ref) = p.core
     isnothing(hyperdiff) && return nothing
 
     (; ᶜ∇²specific_tracers) = p.hyperdiff
@@ -280,6 +281,8 @@ NVTX.@annotate function prep_tracer_hyperdiffusion_tendency!(Yₜ, Y, p, t)
     # ᶜ∇²specific_tracers .= wdivₕ.(gradₕ.(ᶜspecific_gs_tracers(Y)))
     foreach_gs_tracer(Y, ᶜ∇²specific_tracers) do ᶜρχ, ᶜ∇²χ, ρχ_name
         if ρχ_name == @name(ρq_tot)
+            q_tot_ref = p.scratch.ᶜtemp_scalar
+            @. compute_hyperdiffusion_reference_q_tot!(q_tot_ref, Y, p)
             @. ᶜ∇²χ = wdivₕ(gradₕ(specific(ᶜρχ, Y.c.ρ) - q_tot_ref))
         else
             @. ᶜ∇²χ = wdivₕ(gradₕ(specific(ᶜρχ, Y.c.ρ)))
