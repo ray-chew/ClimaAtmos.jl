@@ -282,7 +282,8 @@ NVTX.@annotate function prep_tracer_hyperdiffusion_tendency!(Yₜ, Y, p, t)
     foreach_gs_tracer(Y, ᶜ∇²specific_tracers) do ᶜρχ, ᶜ∇²χ, ρχ_name
         if ρχ_name == @name(ρq_tot)
             q_tot_ref = p.scratch.ᶜtemp_scalar
-            @. compute_hyperdiffusion_reference_q_tot!(q_tot_ref, Y, p)
+            T_ref = p.scratch.ᶜtemp_scalar_2
+            @. compute_hyperdiffusion_reference_q_tot!(q_tot_ref, T_ref, p)
             @. ᶜ∇²χ = wdivₕ(gradₕ(specific(ᶜρχ, Y.c.ρ) - q_tot_ref))
         else
             @. ᶜ∇²χ = wdivₕ(gradₕ(specific(ᶜρχ, Y.c.ρ)))
