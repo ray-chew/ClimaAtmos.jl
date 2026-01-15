@@ -78,12 +78,20 @@ function ClimaAtmosParameters(
     external_forcing_params = external_forcing_parameters(toml_dict)
     EFP = typeof(external_forcing_params)
 
-    non_orographic_gravity_wave_params =
-        NonOrographicGravityWaveParameters(toml_dict)
+    # Only load gravity wave parameters if enabled in config
+    non_orographic_gravity_wave_params = nothing
+    orographic_gravity_wave_params = nothing
+    if !isnothing(parsed_args)
+        if get(parsed_args, "non_orographic_gravity_wave", false)
+            non_orographic_gravity_wave_params =
+                NonOrographicGravityWaveParameters(toml_dict)
+        end
+        if !isnothing(get(parsed_args, "orographic_gravity_wave", nothing))
+            orographic_gravity_wave_params =
+                OrographicGravityWaveParameters(toml_dict)
+        end
+    end
     NOGWP = typeof(non_orographic_gravity_wave_params)
-
-    orographic_gravity_wave_params =
-        OrographicGravityWaveParameters(toml_dict)
     OGWP = typeof(orographic_gravity_wave_params)
 
     parameters =
